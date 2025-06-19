@@ -1,0 +1,11 @@
+module.exports = {
+  SLIPPAGE: 0.005, // 0.5%
+  TOKENS: ['ETH', 'MATIC', 'LINK', 'UNI', 'ARB'],
+  RSI_PERIOD: 14,
+  MACD_FAST: 12,
+  MACD_SLOW: 26,
+  MACD_SIGNAL: 9,
+  BOLLINGER_PERIOD: 20,
+  STOP_LOSS: 0.05, // 5%
+  TAKE_PROFIT: 0.1  // 10%
+};
