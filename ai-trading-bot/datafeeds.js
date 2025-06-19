@@ -1,14 +1,27 @@
 const axios = require('axios');
 
-async function getPrice(symbol) {
+async function getPrices() {
+  console.log("\ud83d\udce1 Fetching prices from CoinGecko...");
   try {
-    const url = `https://api.coingecko.com/api/v3/simple/price?ids=${symbol.toLowerCase()}&vs_currencies=usd`;
-    const { data } = await axios.get(url);
-    return data[symbol.toLowerCase()].usd;
+    const res = await axios.get("https://api.coingecko.com/api/v3/simple/price", {
+      params: {
+        ids: "ethereum,polygon,chainlink,uniswap,arbitrum",
+        vs_currencies: "usd"
+      }
+    });
+    console.log("\u2705 Price data:", res.data);
+    return {
+      eth: res.data.ethereum?.usd,
+      matic: res.data.polygon?.usd,
+      link: res.data.chainlink?.usd,
+      uni: res.data.uniswap?.usd,
+      arb: res.data.arbitrum?.usd
+    };
   } catch (err) {
-    console.error('Price fetch error', err.message);
+    console.error("\u274c Price fetch error:", err.message);
     return null;
   }
 }
 
-module.exports = { getPrice };
+module.exports = { getPrices };
+
