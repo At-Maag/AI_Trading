@@ -1,0 +1,5 @@
+node_modules/
+ai-trading-bot/.env
+ai-trading-bot/logs/
+.DS_Store
+
