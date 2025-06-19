@@ -5,7 +5,6 @@ const trade = require('./trade');
 const risk = require('./risk');
 const fs = require('fs');
 const config = require('./config');
-const indicators = require('./indicators');
 
 let history = [];
 let paper = true; // default to paper trading
@@ -26,12 +25,8 @@ async function loop() {
     history.push({ time: Date.now(), close: price });
     if (history.length > 100) history.shift();
     const closing = history.map(h => h.close);
-    const rsiValues = indicators.rsi(closing, config.RSI_PERIOD).slice(-1)[0];
-    const macdValues = indicators.macd(closing).slice(-1)[0];
-    const boll = indicators.bollinger(closing, config.BOLLINGER_PERIOD).slice(-1)[0];
-    console.log(`\ud83d\udcc8 RSI/MACD/Bollinger: ${rsiValues}/${macdValues?.MACD}/${boll?.lower}-${boll?.upper}`);
-    const score = strategy.scoreSignals(history);
-    if (strategy.shouldBuy(score)) {
+    const signal = strategy.analyze(symbol, closing);
+    if (signal && signal.action === 'BUY') {
       console.log(`\ud83d\udfe2 Signal: BUY ${symbol}`);
       if (paper) {
         console.log(`\ud83e\uddea PAPER TRADE: Simulated BUY ${symbol} at $${price}`);
@@ -40,7 +35,7 @@ async function loop() {
         risk.updateEntry(price);
         logTrade('BUY', symbol, 0.01, price);
       }
-    } else if (strategy.shouldSell && strategy.shouldSell(score)) {
+    } else if (signal && signal.action === 'SELL') {
       console.log(`\ud83d\dd34 Signal: SELL ${symbol}`);
       if (paper) {
         console.log(`\ud83e\uddea PAPER TRADE: Simulated SELL ${symbol} at $${price}`);
