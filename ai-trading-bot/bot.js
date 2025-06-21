@@ -28,7 +28,7 @@ async function loop() {
   const prices = await getPrices();
   if (!prices) return;
 
-  for (const symbol of config.TOKENS) {
+  for (const symbol of config.coins) {
     const price = prices[symbol.toLowerCase()];
     if (!price) continue;
     console.log(`\u23f1 Checking ${symbol} at $${price}`);
