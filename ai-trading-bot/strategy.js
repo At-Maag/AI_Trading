@@ -3,7 +3,7 @@ const ti = require('technicalindicators');
 // AI-Enhanced Momentum Breakout strategy
 // prices - array of closing prices (oldest to newest)
 function analyze(symbol, prices) {
-  if (!Array.isArray(prices) || prices.length < 25) {
+  if (!Array.isArray(prices) || prices.length < 14) {
     console.error('Not enough price data provided to strategy');
     return null;
   }
@@ -54,4 +54,14 @@ function analyze(symbol, prices) {
   return null;
 }
 
-module.exports = { analyze };
+function shouldBuy(symbol, prices) {
+  const res = analyze(symbol, prices);
+  return res && res.action === 'BUY';
+}
+
+function shouldSell(symbol, prices) {
+  const res = analyze(symbol, prices);
+  return res && res.action === 'SELL';
+}
+
+module.exports = { analyze, shouldBuy, shouldSell };

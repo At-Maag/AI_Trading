@@ -7,7 +7,8 @@ const fs = require('fs');
 const path = require('path');
 const config = require('./config');
 
-let history = [];
+// Maintain an in-memory price history for each token
+const history = {};
 let paper = true; // default to paper trading
 let activeTrades = {};
 
@@ -26,17 +27,24 @@ function logTrade(side, token, amount, price, reason, pnlPct) {
 async function loop() {
   const prices = await getPrices();
   if (!prices) return;
+
   for (const symbol of config.TOKENS) {
     const price = prices[symbol.toLowerCase()];
     if (!price) continue;
     console.log(`\u23f1 Checking ${symbol} at $${price}`);
-    history.push({ time: Date.now(), close: price });
-    if (history.length > 100) history.shift();
-    const closing = history.map(h => h.close);
+
+    if (!history[symbol]) history[symbol] = [];
+    history[symbol].push(price);
+    if (history[symbol].length > 100) history[symbol].shift();
+
+    const closing = history[symbol];
+    if (closing.length < 14) {
+      console.log(`\u23f8 Waiting for more ${symbol} data (${closing.length}/14)`);
+      continue;
+    }
 
     if (!activeTrades[symbol]) {
-      const signal = strategy.analyze(symbol, closing);
-      if (signal && signal.action === 'BUY') {
+      if (strategy.shouldBuy(symbol, closing)) {
         console.log(`\ud83d\udfe2 Signal: BUY ${symbol}`);
         if (paper) {
           console.log(`\ud83e\uddea PAPER TRADE: Simulated BUY ${symbol} at $${price}`);
@@ -47,13 +55,12 @@ async function loop() {
         activeTrades[symbol] = true;
         logTrade('BUY', symbol, 0.01, price, 'signal');
       }
-    }
-
-    if (activeTrades[symbol]) {
+    } else {
       const hitStop = risk.stopLoss(symbol, price);
       const hitProfit = risk.takeProfit(symbol, price);
-      if (hitStop || hitProfit) {
-        const reason = hitStop ? 'stopLoss' : 'takeProfit';
+      const sellSignal = strategy.shouldSell(symbol, closing);
+      if (hitStop || hitProfit || sellSignal) {
+        const reason = sellSignal ? 'signal' : hitStop ? 'stopLoss' : 'takeProfit';
         const entry = risk.getEntry(symbol) || price;
         const pnl = ((price - entry) / entry) * 100;
         if (paper) {
