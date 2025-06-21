@@ -9,13 +9,17 @@ const config = require('./config');
 
 let history = [];
 let paper = true; // default to paper trading
+let activeTrades = {};
 
 const logFile = path.join(__dirname, '..', 'data', 'trade-log.json');
 
-function logTrade(side, token, amount, price) {
+function logTrade(side, token, amount, price, reason, pnlPct) {
   let trades = [];
   try { trades = JSON.parse(fs.readFileSync(logFile)); } catch {}
-  trades.push({ time: new Date().toISOString(), side, token, amount, price });
+  const entry = { time: new Date().toISOString(), side, token, amount, price };
+  if (reason) entry.reason = reason;
+  if (typeof pnlPct === 'number') entry.pnlPct = Number(pnlPct.toFixed(2));
+  trades.push(entry);
   fs.writeFileSync(logFile, JSON.stringify(trades, null, 2));
 }
 
@@ -29,32 +33,38 @@ async function loop() {
     history.push({ time: Date.now(), close: price });
     if (history.length > 100) history.shift();
     const closing = history.map(h => h.close);
-    const signal = strategy.analyze(symbol, closing);
-    if (signal && signal.action === 'BUY') {
-      console.log(`\ud83d\udfe2 Signal: BUY ${symbol}`);
-      if (paper) {
-        console.log(`\ud83e\uddea PAPER TRADE: Simulated BUY ${symbol} at $${price}`);
-      } else {
-        await trade.buy(0.01, [], symbol); // placeholder path
-        risk.updateEntry(price);
-        logTrade('BUY', symbol, 0.01, price);
-      }
-    } else if (signal && signal.action === 'SELL') {
-      console.log(`\ud83d\dd34 Signal: SELL ${symbol}`);
-      if (paper) {
-        console.log(`\ud83e\uddea PAPER TRADE: Simulated SELL ${symbol} at $${price}`);
-      } else {
-        await trade.sell(0.01, [], symbol); // placeholder path
-        logTrade('SELL', symbol, 0.01, price);
+
+    if (!activeTrades[symbol]) {
+      const signal = strategy.analyze(symbol, closing);
+      if (signal && signal.action === 'BUY') {
+        console.log(`\ud83d\udfe2 Signal: BUY ${symbol}`);
+        if (paper) {
+          console.log(`\ud83e\uddea PAPER TRADE: Simulated BUY ${symbol} at $${price}`);
+        } else {
+          await trade.buy(0.01, [], symbol); // placeholder path
+        }
+        risk.updateEntry(symbol, price);
+        activeTrades[symbol] = true;
+        logTrade('BUY', symbol, 0.01, price, 'signal');
       }
     }
-    if (risk.stopLoss(price) || risk.takeProfit(price)) {
-      if (paper) {
-        console.log(`\ud83e\uddea PAPER TRADE: Simulated SELL ${symbol} at $${price}`);
-      } else {
-        await trade.sell(0.01, [], symbol); // placeholder path
+
+    if (activeTrades[symbol]) {
+      const hitStop = risk.stopLoss(symbol, price);
+      const hitProfit = risk.takeProfit(symbol, price);
+      if (hitStop || hitProfit) {
+        const reason = hitStop ? 'stopLoss' : 'takeProfit';
+        const entry = risk.getEntry(symbol) || price;
+        const pnl = ((price - entry) / entry) * 100;
+        if (paper) {
+          console.log(`\ud83e\uddea PAPER TRADE: Simulated SELL ${symbol} at $${price}`);
+        } else {
+          await trade.sell(0.01, [], symbol); // placeholder path
+        }
+        console.log(`\ud83d\udd34 SELL ${symbol} triggered by ${reason} at $${price} (${pnl.toFixed(2)}%)`);
+        logTrade('SELL', symbol, 0.01, price, reason, pnl);
+        activeTrades[symbol] = false;
       }
-      logTrade('SELL', symbol, 0.01, price);
     }
   }
 }
