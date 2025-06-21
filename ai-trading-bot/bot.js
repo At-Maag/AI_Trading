@@ -15,11 +15,16 @@ let activeTrades = {};
 const logFile = path.join(__dirname, '..', 'data', 'trade-log.json');
 const errorFile = path.join(__dirname, '..', 'logs', 'error.log');
 
-function logError(message) {
+function logError(err) {
   try { fs.mkdirSync(path.dirname(errorFile), { recursive: true }); } catch {}
-  const ts = new Date().toISOString().slice(0, 16).replace('T', ' ');
-  fs.appendFileSync(errorFile, `[${ts}] ERROR: ${message}\n`);
+  const ts = new Date().toISOString();
+  const msg = err instanceof Error ? err.stack || err.message : err;
+  fs.appendFileSync(errorFile, `[${ts}] ${msg}\n`);
+  console.error(msg);
 }
+
+process.on('unhandledRejection', logError);
+process.on('uncaughtException', logError);
 
 function logTrade(side, token, amount, price, reason, pnlPct) {
   let trades = [];
@@ -107,13 +112,15 @@ async function loop() {
     }
   }
   } catch (err) {
-    logError(`Loop failure | Reason: ${err.message}`);
+    logError(`Loop failure | ${err.stack || err}`);
   }
 }
 
 function main() {
   console.log("\ud83d\ude80 Bot started.");
-  setInterval(loop, 60 * 1000);
+  setInterval(() => {
+    loop().catch(logError);
+  }, 60 * 1000);
 }
 
 main();
