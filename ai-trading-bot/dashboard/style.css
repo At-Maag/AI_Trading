@@ -2,3 +2,4 @@ body { font-family: Arial, sans-serif; background: #111; color: #eee; }
 h1 { text-align: center; }
 #pnl { margin: 20px; font-size: 1.2em; }
 #trades { margin: 20px; }
+#trades div { margin-bottom: 5px; }
