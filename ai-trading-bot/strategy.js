@@ -91,4 +91,39 @@ function shouldSell(symbol, prices) {
   return res && res.action === 'SELL';
 }
 
-module.exports = { analyze, shouldBuy, shouldSell, latestRsi };
+function score(prices) {
+  if (!Array.isArray(prices) || prices.length < 20) {
+    return { score: 0, signals: [] };
+  }
+
+  const rsiVals = RSI.calculate({ values: prices, period: 14 });
+  const sma5 = SMA.calculate({ period: 5, values: prices });
+  const sma20 = SMA.calculate({ period: 20, values: prices });
+
+  const rsiCurrent = rsiVals[rsiVals.length - 1];
+  const signals = [];
+
+  if (rsiCurrent >= 40 && rsiCurrent <= 60) {
+    signals.push('RSI in momentum zone');
+  }
+
+  const currentPrice = prices[prices.length - 1];
+  if (sma5.length && currentPrice > sma5[sma5.length - 1]) {
+    signals.push('Price above SMA');
+  }
+
+  const rsiDropped = rsiVals.slice(-5).some(v => v < 30);
+  let crossover = false;
+  if (sma5.length >= 2 && sma20.length >= 2) {
+    const prevCross = sma5[sma5.length - 2] <= sma20[sma20.length - 2];
+    const currCross = sma5[sma5.length - 1] > sma20[sma20.length - 1];
+    crossover = prevCross && currCross;
+  }
+  if (rsiDropped && rsiCurrent > 40 || crossover) {
+    signals.push('RSI bounce/SMA crossover');
+  }
+
+  return { score: signals.length, signals };
+}
+
+module.exports = { analyze, shouldBuy, shouldSell, latestRsi, score };
