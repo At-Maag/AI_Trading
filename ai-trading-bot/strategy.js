@@ -1,4 +1,10 @@
-const ti = require('technicalindicators');
+const { RSI, MACD, SMA } = require('technicalindicators');
+
+// Calculate the most recent RSI value from an array of closing prices
+function latestRsi(closing) {
+  const values = RSI.calculate({ values: closing, period: 14 });
+  return values[values.length - 1];
+}
 
 // AI-Enhanced Momentum Breakout strategy
 // prices - array of closing prices (oldest to newest)
@@ -8,8 +14,8 @@ function analyze(symbol, prices) {
     return null;
   }
 
-  const rsiVals = ti.RSI.calculate({ values: prices, period: 14 });
-  const macdVals = ti.MACD.calculate({
+  const rsiVals = RSI.calculate({ values: prices, period: 14 });
+  const macdVals = MACD.calculate({
     values: prices,
     fastPeriod: 12,
     slowPeriod: 26,
@@ -17,12 +23,12 @@ function analyze(symbol, prices) {
     SimpleMAOscillator: false,
     SimpleMASignal: false
   });
-  const sma5 = ti.SMA.calculate({ period: 5, values: prices });
-  const sma20 = ti.SMA.calculate({ period: 20, values: prices });
+  const sma5 = SMA.calculate({ period: 5, values: prices });
+  const sma20 = SMA.calculate({ period: 20, values: prices });
 
   const signals = [];
 
-  const rsiCurrent = rsiVals[rsiVals.length - 1];
+  const rsiCurrent = latestRsi(prices);
   const rsiDropped = rsiVals.slice(-5).some(v => v < 30);
   if (rsiDropped && rsiCurrent > 40) {
     signals.push('RSI bounce');
@@ -64,4 +70,4 @@ function shouldSell(symbol, prices) {
   return res && res.action === 'SELL';
 }
 
-module.exports = { analyze, shouldBuy, shouldSell };
+module.exports = { analyze, shouldBuy, shouldSell, latestRsi };
