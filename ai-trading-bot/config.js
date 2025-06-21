@@ -1,6 +1,32 @@
 module.exports = {
   SLIPPAGE: 0.005, // 0.5%
-  TOKENS: ['ETH', 'MATIC', 'LINK', 'UNI', 'ARB'],
+  coins: [
+    'ETH',      // Ethereum
+    'LINK',     // Chainlink
+    'UNI',      // Uniswap
+    'ARB',      // Arbitrum
+    'MATIC',    // Polygon
+    'WBTC',     // Wrapped Bitcoin
+    'AAVE',     // Aave
+    'COMP',     // Compound
+    'SNX',      // Synthetix
+    'SUSHI',    // SushiSwap
+    'LDO',      // Lido DAO
+    'MKR',      // Maker
+    'CRV',      // Curve DAO
+    'GRT',      // The Graph
+    'ENS',      // Ethereum Name Service
+    '1INCH',    // 1inch
+    'DYDX',     // dYdX
+    'BAL',      // Balancer
+    'BNT',      // Bancor
+    'REN',      // Ren Protocol
+    'OCEAN',    // Ocean Protocol
+    'BAND',     // Band Protocol
+    'RLC',      // iExec RLC
+    'AMPL',     // Ampleforth
+    'STORJ'     // Storj
+  ],
   RSI_PERIOD: 14,
   MACD_FAST: 12,
   MACD_SLOW: 26,
