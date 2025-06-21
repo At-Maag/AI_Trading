@@ -4,15 +4,19 @@ const strategy = require('./strategy');
 const trade = require('./trade');
 const risk = require('./risk');
 const fs = require('fs');
+const path = require('path');
 const config = require('./config');
 
 let history = [];
 let paper = true; // default to paper trading
 
+const logFile = path.join(__dirname, '..', 'data', 'trade-log.json');
+
 function logTrade(side, token, amount, price) {
-  const trades = JSON.parse(fs.readFileSync('./logs/trades.json'));
+  let trades = [];
+  try { trades = JSON.parse(fs.readFileSync(logFile)); } catch {}
   trades.push({ time: new Date().toISOString(), side, token, amount, price });
-  fs.writeFileSync('./logs/trades.json', JSON.stringify(trades, null, 2));
+  fs.writeFileSync(logFile, JSON.stringify(trades, null, 2));
 }
 
 async function loop() {
@@ -31,7 +35,7 @@ async function loop() {
       if (paper) {
         console.log(`\ud83e\uddea PAPER TRADE: Simulated BUY ${symbol} at $${price}`);
       } else {
-        await trade.buy(0.01, []); // placeholder path
+        await trade.buy(0.01, [], symbol); // placeholder path
         risk.updateEntry(price);
         logTrade('BUY', symbol, 0.01, price);
       }
@@ -40,7 +44,7 @@ async function loop() {
       if (paper) {
         console.log(`\ud83e\uddea PAPER TRADE: Simulated SELL ${symbol} at $${price}`);
       } else {
-        await trade.sell(0.01, []); // placeholder path
+        await trade.sell(0.01, [], symbol); // placeholder path
         logTrade('SELL', symbol, 0.01, price);
       }
     }
@@ -48,7 +52,7 @@ async function loop() {
       if (paper) {
         console.log(`\ud83e\uddea PAPER TRADE: Simulated SELL ${symbol} at $${price}`);
       } else {
-        await trade.sell(0.01, []); // placeholder path
+        await trade.sell(0.01, [], symbol); // placeholder path
       }
       logTrade('SELL', symbol, 0.01, price);
     }

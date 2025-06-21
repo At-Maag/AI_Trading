@@ -6,6 +6,9 @@ module.exports = {
   MACD_SLOW: 26,
   MACD_SIGNAL: 9,
   BOLLINGER_PERIOD: 20,
-  STOP_LOSS: 0.05, // 5%
-  TAKE_PROFIT: 0.1  // 10%
+  STOP_LOSS: 0.04, // 4%
+  TAKE_PROFIT: 0.08, // 8%
+  TRAILING_STOP: 0.02,
+  GAS_LIMIT_GWEI: 80,
+  TRADE_ALLOCATION: 0.22
 };

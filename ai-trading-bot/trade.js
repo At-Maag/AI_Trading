@@ -1,4 +1,6 @@
 const { ethers } = require('ethers');
+const fs = require('fs');
+const path = require('path');
 const config = require('./config');
 require('dotenv').config();
 
@@ -11,7 +13,30 @@ const provider = new ethers.InfuraProvider('mainnet', process.env.INFURA_API_KEY
 const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
 const router = new ethers.Contract('0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f', routerAbi, wallet); // placeholder address
 
-async function buy(amountEth, path) {
+const logPath = path.join(__dirname, '..', 'data', 'trade-log.json');
+
+function appendLog(entry) {
+  try { fs.mkdirSync(path.dirname(logPath), { recursive: true }); } catch {}
+  let data = [];
+  try { data = JSON.parse(fs.readFileSync(logPath)); } catch {}
+  data.push(entry);
+  fs.writeFileSync(logPath, JSON.stringify(data, null, 2));
+}
+
+async function gasOkay() {
+  const feeData = await provider.getFeeData();
+  const gasPrice = feeData.gasPrice || ethers.parseUnits('0', 'gwei');
+  if (gasPrice > ethers.parseUnits(config.GAS_LIMIT_GWEI.toString(), 'gwei')) {
+    const gwei = Number(ethers.formatUnits(gasPrice, 'gwei')).toFixed(1);
+    console.log(`\u26FD Gas ${gwei} gwei exceeds limit`);
+    appendLog({ time: new Date().toISOString(), action: 'SKIP', reason: 'Gas high', gas: gwei });
+    return false;
+  }
+  return true;
+}
+
+async function buy(amountEth, path, token) {
+  if (!await gasOkay()) return null;
   const tx = await router.swapExactETHForTokens(
     0,
     path,
@@ -19,10 +44,13 @@ async function buy(amountEth, path) {
     Math.floor(Date.now() / 1000) + 60 * 10,
     { value: ethers.parseEther(amountEth.toString()) }
   );
-  return tx.wait();
+  const receipt = await tx.wait();
+  appendLog({ time: new Date().toISOString(), action: 'BUY', token, amountEth, tx: tx.hash });
+  return receipt;
 }
 
-async function sell(amountToken, path) {
+async function sell(amountToken, path, token) {
+  if (!await gasOkay()) return null;
   const tx = await router.swapExactTokensForETH(
     ethers.parseUnits(amountToken.toString(), 18),
     0,
@@ -30,7 +58,9 @@ async function sell(amountToken, path) {
     wallet.address,
     Math.floor(Date.now() / 1000) + 60 * 10
   );
-  return tx.wait();
+  const receipt = await tx.wait();
+  appendLog({ time: new Date().toISOString(), action: 'SELL', token, amountToken, tx: tx.hash });
+  return receipt;
 }
 
 module.exports = { buy, sell };
