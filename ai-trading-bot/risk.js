@@ -1,25 +1,31 @@
 const config = require('./config');
 
-let entryPrice = null;
-let highWater = null;
+let entryPrice = {};
+let highWater = {};
 
-function updateEntry(price) {
-  entryPrice = price;
-  highWater = price;
+function updateEntry(symbol, price) {
+  entryPrice[symbol] = price;
+  highWater[symbol] = price;
 }
 
-function stopLoss(price) {
-  if (entryPrice && price < entryPrice * (1 - config.STOP_LOSS)) return true;
+function getEntry(symbol) {
+  return entryPrice[symbol] || null;
+}
+
+function stopLoss(symbol, price) {
+  if (entryPrice[symbol] && price < entryPrice[symbol] * (1 - config.STOP_LOSS)) {
+    return true;
+  }
   return false;
 }
 
-function takeProfit(price) {
-  if (!entryPrice) return false;
-  if (price > highWater) highWater = price;
-  const trailing = highWater * (1 - config.TRAILING_STOP);
-  if (price >= entryPrice * (1 + config.TAKE_PROFIT)) return true;
-  if (price < trailing && price > entryPrice) return true;
+function takeProfit(symbol, price) {
+  if (!entryPrice[symbol]) return false;
+  if (price > highWater[symbol]) highWater[symbol] = price;
+  const trailing = highWater[symbol] * (1 - config.TRAILING_STOP);
+  if (price >= entryPrice[symbol] * (1 + config.TAKE_PROFIT)) return true;
+  if (price < trailing && price > entryPrice[symbol]) return true;
   return false;
 }
 
-module.exports = { updateEntry, stopLoss, takeProfit };
+module.exports = { updateEntry, stopLoss, takeProfit, getEntry };
