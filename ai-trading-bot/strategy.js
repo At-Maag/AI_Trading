@@ -34,11 +34,26 @@ function analyze(symbol, prices) {
     signals.push('RSI bounce');
   }
 
+  // --- Enhanced aggressive logic ---
+  const recentHigh = Math.max(...prices.slice(-5));
+  const currentPrice = prices[prices.length - 1];
+  if (currentPrice > recentHigh * 1.01) {
+    signals.push('Breakout spike');
+  }
+
+  if (currentPrice > sma5[sma5.length - 1]) {
+    signals.push('Price above SMA5');
+  }
+
+  if (rsiCurrent >= 40 && rsiCurrent <= 60) {
+    signals.push('RSI in momentum zone');
+  }
+
   if (macdVals.length >= 2) {
     const prev = macdVals[macdVals.length - 2];
     const curr = macdVals[macdVals.length - 1];
     if (prev.MACD <= prev.signal && curr.MACD > curr.signal) {
-      signals.push('MACD bullish');
+      signals.push('MACD bullish crossover');
     }
   }
 
@@ -50,11 +65,17 @@ function analyze(symbol, prices) {
     }
   }
 
-  console.log(`\uD83D\uDD14 ${symbol} Signals: ${signals.join(', ')}`);
+  const aggressive = process.env.AGGRESSIVE === 'true';
 
-  if (signals.length >= 3) {
-    console.log(`\u2705 BUY trigger for ${symbol}`);
+  // Log all signals for transparency
+  console.log(`${symbol} trade check:`, signals);
+
+  if ((aggressive && signals.length >= 2) || signals.length >= 3) {
     return { action: 'BUY', confidence: signals.length, reasons: signals };
+  }
+
+  if (rsiCurrent > 70 || (macdVals.length >= 2 && macdVals[macdVals.length - 1].MACD < macdVals[macdVals.length - 1].signal)) {
+    return { action: 'SELL', confidence: 1, reasons: ['Overbought or MACD bearish'] };
   }
 
   return null;
