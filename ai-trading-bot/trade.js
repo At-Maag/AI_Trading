@@ -40,7 +40,7 @@ const TOKEN_ADDRESS_MAP = {
   STORJ: '0xb64ef51c888972c908cfacf59b47c1afbc0ab8ac'
 };
 
-const errorLogPath = path.join(__dirname, '..', 'logs', 'error.log');
+const errorLogPath = path.join(__dirname, '..', 'logs', 'error-log.txt');
 
 function logError(err) {
   try { fs.mkdirSync(path.dirname(errorLogPath), { recursive: true }); } catch {}
@@ -51,6 +51,7 @@ function logError(err) {
 }
 
 const logPath = path.join(__dirname, '..', 'data', 'trade-log.json');
+const tradeLogTxt = path.join(__dirname, '..', 'logs', 'trade-log.txt');
 
 function appendLog(entry) {
   try { fs.mkdirSync(path.dirname(logPath), { recursive: true }); } catch {}
@@ -58,6 +59,14 @@ function appendLog(entry) {
   try { data = JSON.parse(fs.readFileSync(logPath)); } catch {}
   data.push(entry);
   fs.writeFileSync(logPath, JSON.stringify(data, null, 2));
+
+  try { fs.mkdirSync(path.dirname(tradeLogTxt), { recursive: true }); } catch {}
+  let line = `[${entry.time}] ${entry.action}`;
+  if (entry.token) line += ` ${entry.token}`;
+  if (entry.amountEth) line += ` ${entry.amountEth}`;
+  if (entry.amountToken) line += ` ${entry.amountToken}`;
+  if (entry.reason) line += ` (${entry.reason})`;
+  fs.appendFileSync(tradeLogTxt, line + '\n');
 }
 
 async function gasOkay() {
