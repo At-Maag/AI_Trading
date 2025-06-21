@@ -15,10 +15,12 @@ const router = new ethers.Contract('0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f',
 
 const errorLogPath = path.join(__dirname, '..', 'logs', 'error.log');
 
-function logError(message) {
+function logError(err) {
   try { fs.mkdirSync(path.dirname(errorLogPath), { recursive: true }); } catch {}
-  const ts = new Date().toISOString().slice(0, 16).replace('T', ' ');
-  fs.appendFileSync(errorLogPath, `[${ts}] ERROR: ${message}\n`);
+  const ts = new Date().toISOString();
+  const msg = err instanceof Error ? err.stack || err.message : err;
+  fs.appendFileSync(errorLogPath, `[${ts}] ${msg}\n`);
+  console.error(msg);
 }
 
 const logPath = path.join(__dirname, '..', 'data', 'trade-log.json');
@@ -37,6 +39,7 @@ async function gasOkay() {
   if (gasPrice > ethers.parseUnits(config.GAS_LIMIT_GWEI.toString(), 'gwei')) {
     const gwei = Number(ethers.formatUnits(gasPrice, 'gwei')).toFixed(1);
     console.log(`\u26FD Gas ${gwei} gwei exceeds limit`);
+    logError(`Gas price ${gwei} gwei exceeds limit`);
     appendLog({ time: new Date().toISOString(), action: 'SKIP', reason: 'Gas high', gas: gwei });
     return false;
   }
@@ -61,7 +64,7 @@ async function buy(amountEth, path, token) {
     appendLog({ time: new Date().toISOString(), action: 'BUY', token, amountEth, tx: tx.hash });
     return receipt;
   } catch (err) {
-    logError(`Failed to trade ETH \u2192 ${token} | Reason: ${err.message}`);
+    logError(`Failed to trade ETH \u2192 ${token} | ${err.stack || err}`);
     throw err;
   }
 }
@@ -84,7 +87,7 @@ async function sell(amountToken, path, token) {
     appendLog({ time: new Date().toISOString(), action: 'SELL', token, amountToken, tx: tx.hash });
     return receipt;
   } catch (err) {
-    logError(`Failed to trade ${token} \u2192 ETH | Reason: ${err.message}`);
+    logError(`Failed to trade ${token} \u2192 ETH | ${err.stack || err}`);
     throw err;
   }
 }
