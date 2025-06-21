@@ -21,7 +21,6 @@ const ID_MAP = {
   DYDX: 'dydx',
   BAL: 'balancer',
   BNT: 'bancor',
-  REN: 'republic-protocol',
   OCEAN: 'ocean-protocol',
   BAND: 'band-protocol',
   RLC: 'iexec-rlc',
