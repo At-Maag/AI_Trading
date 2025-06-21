@@ -13,6 +13,14 @@ const provider = new ethers.InfuraProvider('mainnet', process.env.INFURA_API_KEY
 const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
 const router = new ethers.Contract('0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f', routerAbi, wallet); // placeholder address
 
+const errorLogPath = path.join(__dirname, '..', 'logs', 'error.log');
+
+function logError(message) {
+  try { fs.mkdirSync(path.dirname(errorLogPath), { recursive: true }); } catch {}
+  const ts = new Date().toISOString().slice(0, 16).replace('T', ' ');
+  fs.appendFileSync(errorLogPath, `[${ts}] ERROR: ${message}\n`);
+}
+
 const logPath = path.join(__dirname, '..', 'data', 'trade-log.json');
 
 function appendLog(entry) {
@@ -36,31 +44,54 @@ async function gasOkay() {
 }
 
 async function buy(amountEth, path, token) {
+  if (token && ['ETH', 'WETH'].includes(token.toUpperCase())) {
+    console.log('\u26a0\ufe0f Skipping ETH to ETH trade');
+    return null;
+  }
   if (!await gasOkay()) return null;
-  const tx = await router.swapExactETHForTokens(
-    0,
-    path,
-    wallet.address,
-    Math.floor(Date.now() / 1000) + 60 * 10,
-    { value: ethers.parseEther(amountEth.toString()) }
-  );
-  const receipt = await tx.wait();
-  appendLog({ time: new Date().toISOString(), action: 'BUY', token, amountEth, tx: tx.hash });
-  return receipt;
+  try {
+    const tx = await router.swapExactETHForTokens(
+      0,
+      path,
+      wallet.address,
+      Math.floor(Date.now() / 1000) + 60 * 10,
+      { value: ethers.parseEther(amountEth.toString()) }
+    );
+    const receipt = await tx.wait();
+    appendLog({ time: new Date().toISOString(), action: 'BUY', token, amountEth, tx: tx.hash });
+    return receipt;
+  } catch (err) {
+    logError(`Failed to trade ETH \u2192 ${token} | Reason: ${err.message}`);
+    throw err;
+  }
 }
 
 async function sell(amountToken, path, token) {
+  if (token && ['ETH', 'WETH'].includes(token.toUpperCase())) {
+    console.log('\u26a0\ufe0f Skipping ETH to ETH trade');
+    return null;
+  }
   if (!await gasOkay()) return null;
-  const tx = await router.swapExactTokensForETH(
-    ethers.parseUnits(amountToken.toString(), 18),
-    0,
-    path,
-    wallet.address,
-    Math.floor(Date.now() / 1000) + 60 * 10
-  );
-  const receipt = await tx.wait();
-  appendLog({ time: new Date().toISOString(), action: 'SELL', token, amountToken, tx: tx.hash });
-  return receipt;
+  try {
+    const tx = await router.swapExactTokensForETH(
+      ethers.parseUnits(amountToken.toString(), 18),
+      0,
+      path,
+      wallet.address,
+      Math.floor(Date.now() / 1000) + 60 * 10
+    );
+    const receipt = await tx.wait();
+    appendLog({ time: new Date().toISOString(), action: 'SELL', token, amountToken, tx: tx.hash });
+    return receipt;
+  } catch (err) {
+    logError(`Failed to trade ${token} \u2192 ETH | Reason: ${err.message}`);
+    throw err;
+  }
 }
 
-module.exports = { buy, sell };
+async function getEthBalance() {
+  const bal = await provider.getBalance(wallet.address);
+  return Number(ethers.formatEther(bal));
+}
+
+module.exports = { buy, sell, getEthBalance };
