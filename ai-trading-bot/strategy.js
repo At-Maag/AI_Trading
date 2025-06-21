@@ -1,57 +1,54 @@
 const ti = require('technicalindicators');
 
-// Analyze price history and return trade signal information
-// symbol - string like "ETH"
+// AI-Enhanced Momentum Breakout strategy
 // prices - array of closing prices (oldest to newest)
 function analyze(symbol, prices) {
-  if (!Array.isArray(prices) || prices.length < 30) {
+  if (!Array.isArray(prices) || prices.length < 25) {
     console.error('Not enough price data provided to strategy');
     return null;
   }
 
-  // calculate indicators
-  const rsi = ti.RSI.calculate({ values: prices, period: 14 }).slice(-1)[0];
-  const macd = ti.MACD.calculate({
+  const rsiVals = ti.RSI.calculate({ values: prices, period: 14 });
+  const macdVals = ti.MACD.calculate({
     values: prices,
     fastPeriod: 12,
     slowPeriod: 26,
     signalPeriod: 9,
     SimpleMAOscillator: false,
     SimpleMASignal: false
-  }).slice(-1)[0];
+  });
+  const sma5 = ti.SMA.calculate({ period: 5, values: prices });
+  const sma20 = ti.SMA.calculate({ period: 20, values: prices });
 
-  const boll = ti.BollingerBands.calculate({
-    period: 20,
-    values: prices,
-    stdDev: 2
-  }).slice(-1)[0];
+  const signals = [];
 
-  const close = prices[prices.length - 1];
-  const histogram = macd ? macd.histogram : undefined;
-
-  let bbPosition = 'inside';
-  if (boll) {
-    if (close > boll.upper) bbPosition = 'above';
-    else if (close < boll.lower) bbPosition = 'below';
+  const rsiCurrent = rsiVals[rsiVals.length - 1];
+  const rsiDropped = rsiVals.slice(-5).some(v => v < 30);
+  if (rsiDropped && rsiCurrent > 40) {
+    signals.push('RSI bounce');
   }
 
-  console.log(`\ud83d\udcc8 ${symbol} \u2192 RSI: ${rsi?.toFixed(1)}, MACD: ${histogram?.toFixed(4)}, Bollinger: ${bbPosition}`);
+  if (macdVals.length >= 2) {
+    const prev = macdVals[macdVals.length - 2];
+    const curr = macdVals[macdVals.length - 1];
+    if (prev.MACD <= prev.signal && curr.MACD > curr.signal) {
+      signals.push('MACD bullish');
+    }
+  }
 
-  if (rsi !== undefined && histogram !== undefined && boll) {
-    if (rsi < 30 && histogram > 0 && close < boll.lower) {
-      return {
-        action: 'BUY',
-        confidence: 8,
-        reason: 'RSI<30, BB below, MACD turning up'
-      };
+  if (sma5.length >= 2 && sma20.length >= 2) {
+    const prevCross = sma5[sma5.length - 2] <= sma20[sma20.length - 2];
+    const currCross = sma5[sma5.length - 1] > sma20[sma20.length - 1];
+    if (prevCross && currCross) {
+      signals.push('SMA crossover');
     }
-    if (rsi > 70 && histogram < 0 && close > boll.upper) {
-      return {
-        action: 'SELL',
-        confidence: 8,
-        reason: 'RSI>70, BB above, MACD turning down'
-      };
-    }
+  }
+
+  console.log(`\uD83D\uDD14 ${symbol} Signals: ${signals.join(', ')}`);
+
+  if (signals.length >= 3) {
+    console.log(`\u2705 BUY trigger for ${symbol}`);
+    return { action: 'BUY', confidence: signals.length, reasons: signals };
   }
 
   return null;
