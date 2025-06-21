@@ -9,7 +9,7 @@ const config = require('./config');
 
 // Maintain an in-memory price history for each token
 const history = {};
-let paper = true; // default to paper trading
+let paper = process.env.PAPER === 'true'; // default to paper trading
 let activeTrades = {};
 
 const logFile = path.join(__dirname, '..', 'data', 'trade-log.json');
