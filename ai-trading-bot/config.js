@@ -20,7 +20,6 @@ module.exports = {
     'DYDX',     // dYdX
     'BAL',      // Balancer
     'BNT',      // Bancor
-    'REN',      // Ren Protocol
     'OCEAN',    // Ocean Protocol
     'BAND',     // Band Protocol
     'RLC',      // iExec RLC
