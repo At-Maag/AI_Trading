@@ -29,6 +29,7 @@ function takeProfit(symbol, price) {
 }
 
 function calculatePositionSize(score, ethBalance, ethPrice) {
+  ethPrice = ethPrice || 3500;
   const s = Math.max(1, Math.min(score, 3));
   const allocation = 0.2 * (s / 3); // max 20% of wallet when score is 3
   const amountEth = ethBalance * allocation;

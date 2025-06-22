@@ -167,9 +167,7 @@ async function evaluate(prices) {
   return res;
 }
 
-async function checkTrades(entries, ethPrice) {
-  const buyMsgs = [];
-  const sellMsgs = [];
+async function checkTrades(entries, ethPrice, isTop) {
   for (const { symbol, price, closing, score, signals } of entries) {
     if (['ETH', 'WETH'].includes(symbol)) {
       continue;
@@ -181,17 +179,15 @@ async function checkTrades(entries, ethPrice) {
 
     if (!activeTrades[symbol]) {
       if (strategy.shouldBuy(symbol, closing)) {
-        const msg = `BUY ${symbol} | Score: ${score} | Price: $${price.toFixed(2)} | ${signals.join(', ')}`;
-        buyMsgs.push(color(msg, 'green'));
         const balance = await trade.getEthBalance();
         const feeData = await provider.getFeeData();
         const gasPrice = feeData.gasPrice || ethers.parseUnits('0', 'gwei');
         const gasCost = Number(ethers.formatEther(gasPrice * 210000n));
         const available = Math.max(balance - gasCost, 0);
 
-        const amountEth = risk.calculatePositionSize(score, available, ethPrice);
+        const amountEth = risk.calculatePositionSize(score, available, ethPrice || 3500);
         if (amountEth <= 0) {
-          console.log(`Skipping ${symbol} — below $${MIN_TRADE_USD}`);
+          console.log(`[SKIP] Trade amount below $${MIN_TRADE_USD} for ${symbol}`);
           continue;
         }
 
@@ -199,24 +195,9 @@ async function checkTrades(entries, ethPrice) {
         if (!tokenAddr) {
           continue;
         }
-        let amountsOut;
-        try {
-          const out = await router.getAmountsOut(
-            ethers.parseEther(amountEth.toFixed(6)),
-            [WETH, tokenAddr]
-          );
-          amountsOut = out && out[1];
-        } catch (e) {
-          logError(`Liquidity check failed for ${symbol} | ${e.message}`);
-        }
-        if (!amountsOut || amountsOut <= 0n) {
-          continue;
-        }
-        if (paper) {
-          // paper mode, no trade executed
-        } else {
+        if (!paper) {
           try {
-            await trade.buy(amountEth, [WETH, tokenAddr], symbol);
+            await trade.buy(amountEth, [WETH, tokenAddr], symbol, { simulate: isTop });
           } catch (err) {
             logError(`Failed to trade ETH \u2192 ${symbol} | ${err.message}`);
           }
@@ -233,32 +214,18 @@ async function checkTrades(entries, ethPrice) {
         const reason = sellSignal ? 'signal' : hitStop ? 'stopLoss' : 'takeProfit';
         const entry = risk.getEntry(symbol) || price;
         const pnl = ((price - entry) / entry) * 100;
-        if (paper) {
-          // paper mode, no trade executed
-        } else {
+        if (!paper) {
           try {
             const tokenAddr = TOKEN_ADDRESSES[symbol];
-            await trade.sell(0.01, [tokenAddr, WETH], symbol);
+            await trade.sell(0.01, [tokenAddr, WETH], symbol, { simulate: isTop });
           } catch (err) {
             logError(`Failed to trade ${symbol} \u2192 ETH | ${err.message}`);
           }
         }
-        const sellMsg = reason === 'signal'
-          ? `SELL ${symbol} | Score: ${score} | Price: $${price.toFixed(2)} | ${signals.join(', ')}`
-          : `SELL ${symbol} triggered by ${reason} at $${price} (${pnl.toFixed(2)}%)`;
-        sellMsgs.push(color(sellMsg, 'red'));
         logTrade('SELL', symbol, 0.01, price, reason, pnl);
         activeTrades[symbol] = false;
       }
     }
-  }
-  if (buyMsgs.length) {
-    console.log(color('== BUY ==', 'green'));
-    buyMsgs.forEach(m => console.log(m));
-  }
-  if (sellMsgs.length) {
-    console.log(color('== SELL ==', 'red'));
-    sellMsgs.forEach(m => console.log(m));
   }
 }
 
@@ -269,10 +236,10 @@ async function loop() {
     if (!prices) return;
     const evaluations = await evaluate(prices);
     const ethPrice = prices.eth;
-    await checkTrades(evaluations.filter(e => groupA.includes(e.symbol)), ethPrice);
+    await checkTrades(evaluations.filter(e => groupA.includes(e.symbol)), ethPrice, true);
     const now = Date.now();
     if (now - lastGroupBCheck >= 5 * 60 * 1000) {
-      await checkTrades(evaluations.filter(e => groupB.includes(e.symbol)), ethPrice);
+      await checkTrades(evaluations.filter(e => groupB.includes(e.symbol)), ethPrice, false);
       lastGroupBCheck = now;
     }
   } catch (err) {
