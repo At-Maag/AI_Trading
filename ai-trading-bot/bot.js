@@ -101,21 +101,53 @@ function color(text, c) {
   return COLORS[c] + text + COLORS.reset;
 }
 
+function formatTable(rows, headers = []) {
+  const widths = headers.map((h, i) => Math.max(h.length, ...rows.map(r => r[i].length)));
+  const line = (left, fill, mid, right) => left + widths.map(w => fill.repeat(w + 2)).join(mid) + right;
+  let out = [line('┌', '─', '┬', '┐')];
+  if (headers.length) {
+    out.push('│ ' + headers.map((h, i) => h.padEnd(widths[i])).join(' │ ') + ' │');
+    out.push(line('├', '─', '┼', '┤'));
+  }
+  rows.forEach(r => {
+    out.push('│ ' + r.map((c, i) => c.padEnd(widths[i])).join(' │ ') + ' │');
+  });
+  out.push(line('└', '─', '┴', '┘'));
+  return out.join('\n');
+}
+
+function renderScan(list) {
+  if (!config.prettyLogs) return;
+  const ts = new Date().toISOString().replace('T', ' ').slice(0, 19);
+  const rows = list.map(r => [
+    r.symbol,
+    `$${r.price.toFixed(2)}`,
+    String(r.score),
+    r.signals.join(', ') || '-'
+  ]);
+  const table = formatTable(rows, ['Symbol', 'Price', 'Score', 'Matched Signals']);
+  console.log(`[${ts}] Scanned Coins:`);
+  console.log(table);
+}
+
 function renderSummary(list) {
   const top = list.slice(0, 5);
   const key = top.map(r => r.symbol).join('-');
   if (key !== lastTopKey) {
     lastTopKey = key;
     const ts = new Date().toISOString().replace('T', ' ').slice(0, 19);
-    console.log(`[${ts}] Trade Summary:`);
-    console.log(color('==== TOP 5 COINS ====', 'magenta'));
-    console.log('| Rank | Symbol | Signals                      |');
-    console.log('|------|--------|------------------------------|');
-    top.forEach((r, i) => {
-      const sigs = color(r.signals.join(', '), 'yellow');
-      const line = `| ${String(i + 1).padEnd(4)}| ${r.symbol.padEnd(6)}| ${sigs.padEnd(30)}|`;
-      console.log(line);
-    });
+    if (config.prettyLogs) {
+      console.log(`[${ts}] ${color('=== 🏆 TOP 5 COINS (Highest Scores) ===', 'magenta')}`);
+      const rows = top.map(r => [
+        r.symbol,
+        `$${r.price.toFixed(2)}`,
+        String(r.score),
+        r.signals.join(', ') || '-'
+      ]);
+      console.log(formatTable(rows, ['Symbol', 'Price', 'Score', 'Matched Signals']));
+    } else {
+      console.log(`[${ts}] TOP 5: ` + top.map(r => `${r.symbol}:${r.score}`).join(' '));
+    }
   }
   const others = list.slice(5).map(r => r.symbol).join(', ');
   if (others) {
@@ -139,12 +171,13 @@ async function evaluate(prices) {
   res.sort((a, b) => b.score - a.score);
   groupA = res.slice(0, 5).map(r => r.symbol);
   groupB = res.slice(5).map(r => r.symbol);
+  renderScan(res);
   renderSummary(res);
   return res;
 }
 
 async function checkTrades(entries) {
-  for (const { symbol, price, closing } of entries) {
+  for (const { symbol, price, closing, score, signals } of entries) {
     if (['ETH', 'WETH'].includes(symbol)) {
       console.log('\u26a0\ufe0f Skipping ETH to ETH trade');
       continue;
@@ -157,7 +190,11 @@ async function checkTrades(entries) {
 
     if (!activeTrades[symbol]) {
       if (strategy.shouldBuy(symbol, closing)) {
-        console.log(color(`\ud83d\udfe2 Signal: BUY ${symbol}`, 'green'));
+        if (config.prettyLogs) {
+          console.log(`✅ Signal: BUY ${symbol} | Score: ${score} | Price: $${price.toFixed(2)} | Reason: ${signals.join(', ')}`);
+        } else {
+          console.log(color(`\ud83d\udfe2 Signal: BUY ${symbol}`, 'green'));
+        }
         const balance = await trade.getEthBalance();
         const feeData = await provider.getFeeData();
         const gasPrice = feeData.gasPrice || ethers.parseUnits('0', 'gwei');
@@ -216,7 +253,11 @@ async function checkTrades(entries) {
             logError(`Failed to trade ${symbol} \u2192 ETH | ${err.message}`);
           }
         }
-        console.log(color(`\ud83d\udd34 SELL ${symbol} triggered by ${reason} at $${price} (${pnl.toFixed(2)}%)`, 'red'));
+        if (config.prettyLogs && reason === 'signal') {
+          console.log(`✅ Signal: SELL ${symbol} | Score: ${score} | Price: $${price.toFixed(2)} | Reason: ${signals.join(', ')}`);
+        } else {
+          console.log(color(`\ud83d\udd34 SELL ${symbol} triggered by ${reason} at $${price} (${pnl.toFixed(2)}%)`, 'red'));
+        }
         logTrade('SELL', symbol, 0.01, price, reason, pnl);
         activeTrades[symbol] = false;
       }
