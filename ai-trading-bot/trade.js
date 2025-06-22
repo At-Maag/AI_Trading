@@ -142,7 +142,7 @@ async function hasLiquidityForSell(amountToken, token) {
   }
 }
 
-async function buy(amountEth, path, token) {
+async function buy(amountEth, path, token, opts = {}) {
   if (token && ['ETH', 'WETH'].includes(token.toUpperCase())) {
     return null;
   }
@@ -151,16 +151,27 @@ async function buy(amountEth, path, token) {
   const swapPath = [WETH_ADDRESS, tokenAddr];
   const wethBal = await getTokenBalance(WETH_ADDRESS, wallet.address, 'WETH');
   if (amountEth > wethBal) {
-    console.log(`\u26a0\ufe0f Not enough WETH. Need: ${amountEth}, Have: ${wethBal}`);
+    console.log(`[SKIP] Not enough WETH for ${token}`);
     return null;
   }
-  if (!await hasLiquidity(amountEth, token)) {
-    appendLog({ time: new Date().toISOString(), action: 'SKIP', token, reason: 'liquidity' });
-    return null;
+  if (opts.simulate) {
+    try {
+      await router.swapExactETHForTokens.staticCall(
+        0,
+        swapPath,
+        wallet.address,
+        Math.floor(Date.now() / 1000) + 60 * 10,
+        { value: parseAmount(Number(amountEth).toFixed(6), 'ETH') }
+      );
+    } catch {
+      console.log(`[SKIP] Not enough liquidity or trade amount too low for ${token}`);
+      appendLog({ time: new Date().toISOString(), action: 'SKIP', token, reason: 'liquidity' });
+      return null;
+    }
   }
   try {
     const amt = Number(amountEth).toFixed(6);
-    console.log(`== BUY ${token} == | Amount ETH: ${amt}`);
+    console.log(`[BUY] ${amt} WETH \u2192 ${token} \u2705`);
     const tx = await router.swapExactETHForTokens(
       0,
       swapPath,
@@ -177,7 +188,7 @@ async function buy(amountEth, path, token) {
   }
 }
 
-async function sell(amountToken, path, token) {
+async function sell(amountToken, path, token, opts = {}) {
   if (token && ['ETH', 'WETH'].includes(token.toUpperCase())) {
     return null;
   }
@@ -186,16 +197,30 @@ async function sell(amountToken, path, token) {
   const swapPath = [tokenAddr, WETH_ADDRESS];
   const bal = await getTokenBalance(tokenAddr, wallet.address, token);
   if (amountToken > bal) {
-    console.log(`\u26a0\ufe0f Not enough ${token} to sell. Needed: ${amountToken}, Have: ${bal}`);
+    console.log(`[SKIP] Not enough ${token} to sell`);
     return null;
   }
-  if (!await hasLiquidityForSell(amountToken, token)) {
+  if (opts.simulate) {
+    try {
+      await router.swapExactTokensForETH.staticCall(
+        parseAmount(Number(amountToken).toFixed(6), token),
+        0,
+        swapPath,
+        wallet.address,
+        Math.floor(Date.now() / 1000) + 60 * 10
+      );
+    } catch {
+      console.log(`[SKIP] Not enough liquidity or trade amount too low for ${token}`);
+      appendLog({ time: new Date().toISOString(), action: 'SKIP', token, reason: 'liquidity' });
+      return null;
+    }
+  } else if (!await hasLiquidityForSell(amountToken, token)) {
     appendLog({ time: new Date().toISOString(), action: 'SKIP', token, reason: 'liquidity' });
     return null;
   }
   try {
     const amt = Number(amountToken).toFixed(6);
-    console.log(`== SELL ${token} == | Amount: ${amt}`);
+    console.log(`[SELL] ${token} \u2192 WETH \u2705`);
     const tx = await router.swapExactTokensForETH(
       parseAmount(amt, token),
       0,
