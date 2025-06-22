@@ -8,6 +8,7 @@ const path = require('path');
 const { ethers } = require('ethers');
 const config = require('./config');
 const TOKENS = require('./tokens');
+const { getValidTokens } = require('./dynamicTokens');
 
 const MIN_TRADE_USD = 10;
 console.debug = () => {};
@@ -21,6 +22,17 @@ const routerAbi = [
 const provider = new ethers.InfuraProvider('mainnet', process.env.INFURA_API_KEY);
 const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
 const walletAddress = ethers.utils.getAddress(wallet.address);
+
+let validTokens = [];
+
+async function refreshTokenList() {
+  const tokens = await getValidTokens();
+  if (tokens && tokens.length) {
+    validTokens = tokens;
+    config.coins = ['ETH', 'WETH', ...validTokens];
+    console.log(`[TOKENS] Loaded ${validTokens.length} tradable tokens`);
+  }
+}
 
 async function withRetry(fn, retries = 3, delay = 1500) {
   for (let i = 0; i < retries; i++) {
@@ -248,6 +260,10 @@ async function loop() {
 
 function main() {
   console.log('\ud83d\ude80 Bot started.');
+  refreshTokenList().catch(logError);
+  setInterval(() => {
+    refreshTokenList().catch(logError);
+  }, 12 * 60 * 60 * 1000);
   setInterval(() => {
     loop().catch(logError);
   }, 60 * 1000);
