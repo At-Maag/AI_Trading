@@ -28,4 +28,9 @@ function takeProfit(symbol, price) {
   return false;
 }
 
-module.exports = { updateEntry, stopLoss, takeProfit, getEntry };
+function calculatePositionSize(score, capital) {
+  const percent = score * 0.05;
+  const usd = capital * percent;
+  return usd < 10 ? 0 : usd;
+}
+module.exports = { updateEntry, stopLoss, takeProfit, getEntry, calculatePositionSize };
