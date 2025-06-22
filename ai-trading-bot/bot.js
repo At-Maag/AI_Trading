@@ -7,6 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const { ethers } = require('ethers');
 const config = require('./config');
+const TOKENS = require('./tokens');
 
 const MIN_TRADE_USD = 10;
 console.debug = () => {};
@@ -20,40 +21,28 @@ const routerAbi = [
 const provider = new ethers.InfuraProvider('mainnet', process.env.INFURA_API_KEY);
 const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
 const walletAddress = ethers.utils.getAddress(wallet.address);
+
+async function withRetry(fn, retries = 3, delay = 1500) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (err.code === -32005 && i < retries - 1) {
+        console.warn(`[RETRY] RPC rate limit hit. Retrying in ${delay}ms...`);
+        await new Promise(res => setTimeout(res, delay));
+      } else {
+        throw err;
+      }
+    }
+  }
+}
 const router = new ethers.Contract(
   ethers.utils.getAddress('0x5c69bee701ef814a2b6a3edd4b1652cb9cc5aa6f'),
   routerAbi,
   wallet
 ); // placeholder address
 
-const WETH = ethers.utils.getAddress('0xC02aaA39b223fe8d0a0e5c4f27ead9083c756cc2');
-
-const TOKEN_ADDRESSES = {
-  LINK: ethers.utils.getAddress('0x514910771af9ca656af840dff83e8264ecf986ca'),
-  UNI: ethers.utils.getAddress('0x1f9840a85d5af5bf1d1762f925bdaddc4201f984'),
-  ARB: ethers.utils.getAddress('0x912ce59144191c1204e64559fe8253a0e49e6548'),
-  MATIC: ethers.utils.getAddress('0x7d1afa7b718fb893db30a3abc0cfc608aacfebb0'),
-  WBTC: ethers.utils.getAddress('0x2260fac5e5542a773aa44fbcfedf7c193bc2c599'),
-  AAVE: ethers.utils.getAddress('0x7fc66500c84a76ad7e9c93437bfc5ac33e2ddae9'),
-  COMP: ethers.utils.getAddress('0xc00e94cb662c3520282e6f5717214004a7f26888'),
-  SNX: ethers.utils.getAddress('0xc011a72400e58ecd99ee497cf89e3775d4bd732f'),
-  SUSHI: ethers.utils.getAddress('0x6b3595068778dd592e39a122f4f5a5cf09c90fe2'),
-  LDO: ethers.utils.getAddress('0x5a98fcbea52bddc8ab185592a42f5edb2fa461ff'),
-  MKR: ethers.utils.getAddress('0x9f8f72aa9304c8b593d555f12ef6589cc3a579a2'),
-  CRV: ethers.utils.getAddress('0xd533a949740bb3306d119cc777fa900ba034cd52'),
-  GRT: ethers.utils.getAddress('0xc944e90c64b2c07662a292be6244bdf05cda44a7'),
-  ENS: ethers.utils.getAddress('0xc18360217d8f7ab5e5edd226be63ede2a818f5e9'),
-  '1INCH': ethers.utils.getAddress('0x111111111117dc0aa78b770fa6a738034120c302'),
-  DYDX: ethers.utils.getAddress('0x92d6c1e31e14520e676a687f0a93788b716beff5'),
-  BAL: ethers.utils.getAddress('0xba100000625a3754423978a60c9317c58a424e3d'),
-  BNT: ethers.utils.getAddress('0x1f573d6fb3f13d689ff844b4cc5c5fbba64ec70b'),
-  REN: ethers.utils.getAddress('0x408e41876cccdc0f92210600ef50372656052a38'),
-  OCEAN: ethers.utils.getAddress('0x967da4048cd07ab37855c090aaf366e4ce1b9f48'),
-  BAND: ethers.utils.getAddress('0x5ff131c1739bf7f2b63e1e6b6591ead5e0ff9112'),
-  RLC: ethers.utils.getAddress('0x607f4c5bb672230e8672085532f7e901544a7375'),
-  AMPL: ethers.utils.getAddress('0xd46ba6d942050d489dbd938a2c909a5d5039a161'),
-  STORJ: ethers.utils.getAddress('0xb64e280e9d1b5dbefaeeb9b253f4f2e405fdbe71')
-};
+const WETH = TOKENS.WETH;
 
 const history = {};
 let paper = process.env.PAPER === 'true';
@@ -185,7 +174,7 @@ async function checkTrades(entries, ethPrice, isTop) {
     if (!activeTrades[symbol]) {
       if (strategy.shouldBuy(symbol, closing)) {
         const balance = await trade.getEthBalance();
-        const feeData = await provider.getFeeData();
+        const feeData = await withRetry(() => provider.getFeeData());
         const gasPrice = feeData.gasPrice || ethers.parseUnits('0', 'gwei');
         const gasCost = Number(ethers.formatEther(gasPrice * 210000n));
         const available = Math.max(balance - gasCost, 0);
@@ -196,7 +185,7 @@ async function checkTrades(entries, ethPrice, isTop) {
           continue;
         }
 
-        const tokenAddr = TOKEN_ADDRESSES[symbol];
+        const tokenAddr = TOKENS[symbol.toUpperCase()];
         if (!tokenAddr) {
           console.log("Token address is null, skipping trade.");
           continue;
@@ -222,7 +211,7 @@ async function checkTrades(entries, ethPrice, isTop) {
         const pnl = ((price - entry) / entry) * 100;
         if (!paper) {
           try {
-            const tokenAddr = TOKEN_ADDRESSES[symbol];
+            const tokenAddr = TOKENS[symbol.toUpperCase()];
             if (!tokenAddr) {
               console.log("Token address is null, skipping trade.");
             } else {

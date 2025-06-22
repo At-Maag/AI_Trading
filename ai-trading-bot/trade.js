@@ -2,6 +2,7 @@ const { ethers } = require('ethers');
 const fs = require('fs');
 const path = require('path');
 const config = require('./config');
+const TOKENS = require('./tokens');
 require('dotenv').config();
 
 const routerAbi = [
@@ -17,6 +18,21 @@ const erc20Abi = [
 const provider = new ethers.InfuraProvider('mainnet', process.env.INFURA_API_KEY);
 const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
 const walletAddress = ethers.utils.getAddress(wallet.address);
+
+async function withRetry(fn, retries = 3, delay = 1500) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (err.code === -32005 && i < retries - 1) {
+        console.warn(`[RETRY] RPC rate limit hit. Retrying in ${delay}ms...`);
+        await new Promise(res => setTimeout(res, delay));
+      } else {
+        throw err;
+      }
+    }
+  }
+}
 // Uniswap V2 Router
 const router = new ethers.Contract(
   ethers.utils.getAddress('0x7a250d5630b4cf539739df2c5dacb4c659f2488d'),
@@ -24,30 +40,7 @@ const router = new ethers.Contract(
   wallet
 );
 
-const WETH_ADDRESS = ethers.utils.getAddress('0xC02aaA39b223fe8d0a0e5c4f27ead9083c756cc2');
-const TOKEN_ADDRESS_MAP = {
-  LINK: ethers.utils.getAddress('0x514910771af9ca656af840dff83e8264ecf986ca'),
-  UNI: ethers.utils.getAddress('0x1f9840a85d5af5bf1d1762f925bdaddc4201f984'),
-  MATIC: ethers.utils.getAddress('0x7d1afa7b718fb893db30a3abc0cfc608aacfebb0'),
-  WBTC: ethers.utils.getAddress('0x2260fac5e5542a773aa44fbcfedf7c193bc2c599'),
-  AAVE: ethers.utils.getAddress('0x7fc66500c84a76ad7e9c93437bfc5ac33e2ddae9'),
-  COMP: ethers.utils.getAddress('0xc00e94cb662c3520282e6f5717214004a7f26888'),
-  SNX: ethers.utils.getAddress('0xc011a72400e58ecd99ee497cf89e3775d4bd732f'),
-  SUSHI: ethers.utils.getAddress('0x6b3595068778dd592e39a122f4f5a5cf09c90fe2'),
-  LDO: ethers.utils.getAddress('0x5a98fcbea516cf06857215779fd812ca3bef1b32'),
-  MKR: ethers.utils.getAddress('0x9f8f72aa9304c8b593d555f12ef6589cc3a579a2'),
-  CRV: ethers.utils.getAddress('0xd533a949740bb3306d119cc777fa900ba034cd52'),
-  GRT: ethers.utils.getAddress('0xc944e90c64b2c07662a292be6244bdf05cda44a7'),
-  '1INCH': ethers.utils.getAddress('0x111111111117dc0aa78b770fa6a738034120c302'),
-  DYDX: ethers.utils.getAddress('0x92d6c1e31e14520e676a687f0a93788b716beff5'),
-  BAL: ethers.utils.getAddress('0xba100000625a3754423978a60c9317c58a424e3d'),
-  BNT: ethers.utils.getAddress('0x1f573d6fb3f13d689ff844b4c6deebd4994e9e6f'),
-  OCEAN: ethers.utils.getAddress('0x967da4048cd07ab37855c090aaf366e4ce1b9f48'),
-  BAND: ethers.utils.getAddress('0xba11d479a30a3dba9281e1d8e6ce942ca109b3a6'),
-  RLC: ethers.utils.getAddress('0x607f4c5bb672230e8672085532f7e901544a7375'),
-  AMPL: ethers.utils.getAddress('0xd46ba6d942050d489dbd938a2c3d573929f443ac'),
-  STORJ: ethers.utils.getAddress('0xb64ef51c888972c908cfacf59b47c1afbc0ab8ac')
-};
+const WETH_ADDRESS = TOKENS.WETH;
 
 // Decimal definitions for tokens. Default to 18, fallback to 6 if unknown
 const TOKEN_DECIMALS = {
@@ -58,7 +51,7 @@ const TOKEN_DECIMALS = {
 function getDecimals(token) {
   const t = (token || '').toUpperCase();
   if (TOKEN_DECIMALS[t]) return TOKEN_DECIMALS[t];
-  if (TOKEN_ADDRESS_MAP[t]) return 18;
+  if (TOKENS[t]) return 18;
   return 6;
 }
 
@@ -108,7 +101,7 @@ function appendLog(entry) {
 }
 
 async function gasOkay() {
-  const feeData = await provider.getFeeData();
+  const feeData = await withRetry(() => provider.getFeeData());
   const gasPrice = feeData.gasPrice || ethers.parseUnits('0', 'gwei');
   if (gasPrice > ethers.parseUnits(config.GAS_LIMIT_GWEI.toString(), 'gwei')) {
     const gwei = Number(ethers.formatUnits(gasPrice, 'gwei')).toFixed(1);
@@ -120,12 +113,14 @@ async function gasOkay() {
 }
 
 async function hasLiquidity(amountEth, token) {
-  const tokenAddr = TOKEN_ADDRESS_MAP[token.toUpperCase()];
+  const tokenAddr = TOKENS[token.toUpperCase()];
   if (!tokenAddr) return false;
   try {
-    const amounts = await router.getAmountsOut(
-      parseAmount(amountEth, 'ETH'),
-      [WETH_ADDRESS, tokenAddr]
+    const amounts = await withRetry(() =>
+      router.getAmountsOut(
+        parseAmount(amountEth, 'ETH'),
+        [WETH_ADDRESS, tokenAddr]
+      )
     );
     return amounts && amounts[1] && amounts[1] > 0n;
   } catch {
@@ -134,12 +129,14 @@ async function hasLiquidity(amountEth, token) {
 }
 
 async function hasLiquidityForSell(amountToken, token) {
-  const tokenAddr = TOKEN_ADDRESS_MAP[token.toUpperCase()];
+  const tokenAddr = TOKENS[token.toUpperCase()];
   if (!tokenAddr) return false;
   try {
-    const amounts = await router.getAmountsOut(
-      parseAmount(amountToken, token),
-      [tokenAddr, WETH_ADDRESS]
+    const amounts = await withRetry(() =>
+      router.getAmountsOut(
+        parseAmount(amountToken, token),
+        [tokenAddr, WETH_ADDRESS]
+      )
     );
     return amounts && amounts[1] && amounts[1] > 0n;
   } catch {
@@ -152,7 +149,7 @@ async function buy(amountEth, path, token, opts = {}) {
     return null;
   }
   if (!await gasOkay()) return null;
-  const tokenAddr = TOKEN_ADDRESS_MAP[token.toUpperCase()];
+  const tokenAddr = TOKENS[token.toUpperCase()];
   if (!tokenAddr) {
     console.log("Token address is null, skipping trade.");
     return null;
@@ -164,9 +161,11 @@ async function buy(amountEth, path, token, opts = {}) {
     return null;
   }
   try {
-    const amounts = await router.getAmountsOut(
-      parseAmount(amountEth, 'ETH'),
-      swapPath
+    const amounts = await withRetry(() =>
+      router.getAmountsOut(
+        parseAmount(amountEth, 'ETH'),
+        swapPath
+      )
     );
     if (!amounts || !amounts[1] || amounts[1] === 0n) {
       console.log(`[SKIP] Not enough liquidity for ${token}`);
@@ -174,12 +173,14 @@ async function buy(amountEth, path, token, opts = {}) {
       return null;
     }
     if (opts.simulate) {
-      await router.swapExactETHForTokens.staticCall(
-        0,
-        swapPath,
-        walletAddress,
-        Math.floor(Date.now() / 1000) + 60 * 10,
-        { value: parseAmount(Number(amountEth).toFixed(6), 'ETH') }
+      await withRetry(() =>
+        router.swapExactETHForTokens.staticCall(
+          0,
+          swapPath,
+          walletAddress,
+          Math.floor(Date.now() / 1000) + 60 * 10,
+          { value: parseAmount(Number(amountEth).toFixed(6), 'ETH') }
+        )
       );
     }
   } catch (err) {
@@ -190,12 +191,14 @@ async function buy(amountEth, path, token, opts = {}) {
   try {
     const amt = Number(amountEth).toFixed(6);
     console.log(`[BUY] ${amt} WETH \u2192 ${token} \u2705`);
-    const tx = await router.swapExactETHForTokens(
-      0,
-      swapPath,
-      walletAddress,
-      Math.floor(Date.now() / 1000) + 60 * 10,
-      { value: parseAmount(amt, 'ETH') }
+    const tx = await withRetry(() =>
+      router.swapExactETHForTokens(
+        0,
+        swapPath,
+        walletAddress,
+        Math.floor(Date.now() / 1000) + 60 * 10,
+        { value: parseAmount(amt, 'ETH') }
+      )
     );
     const receipt = await tx.wait();
     appendLog({ time: new Date().toISOString(), action: 'BUY', token, amountEth: amt, tx: tx.hash });
@@ -211,7 +214,7 @@ async function sell(amountToken, path, token, opts = {}) {
     return null;
   }
   if (!await gasOkay()) return null;
-  const tokenAddr = TOKEN_ADDRESS_MAP[token.toUpperCase()];
+  const tokenAddr = TOKENS[token.toUpperCase()];
   if (!tokenAddr) {
     console.log("Token address is null, skipping trade.");
     return null;
@@ -223,9 +226,11 @@ async function sell(amountToken, path, token, opts = {}) {
     return null;
   }
   try {
-    const amounts = await router.getAmountsOut(
-      parseAmount(amountToken, token),
-      swapPath
+    const amounts = await withRetry(() =>
+      router.getAmountsOut(
+        parseAmount(amountToken, token),
+        swapPath
+      )
     );
     if (!amounts || !amounts[1] || amounts[1] === 0n) {
       console.log(`[SKIP] Not enough liquidity for ${token}`);
@@ -233,12 +238,14 @@ async function sell(amountToken, path, token, opts = {}) {
       return null;
     }
     if (opts.simulate) {
-      await router.swapExactTokensForETH.staticCall(
-        parseAmount(Number(amountToken).toFixed(6), token),
-        0,
-        swapPath,
-        walletAddress,
-        Math.floor(Date.now() / 1000) + 60 * 10
+      await withRetry(() =>
+        router.swapExactTokensForETH.staticCall(
+          parseAmount(Number(amountToken).toFixed(6), token),
+          0,
+          swapPath,
+          walletAddress,
+          Math.floor(Date.now() / 1000) + 60 * 10
+        )
       );
     }
   } catch (err) {
@@ -249,12 +256,14 @@ async function sell(amountToken, path, token, opts = {}) {
   try {
     const amt = Number(amountToken).toFixed(6);
     console.log(`[SELL] ${token} \u2192 WETH \u2705`);
-    const tx = await router.swapExactTokensForETH(
-      parseAmount(amt, token),
-      0,
-      swapPath,
-      walletAddress,
-      Math.floor(Date.now() / 1000) + 60 * 10
+    const tx = await withRetry(() =>
+      router.swapExactTokensForETH(
+        parseAmount(amt, token),
+        0,
+        swapPath,
+        walletAddress,
+        Math.floor(Date.now() / 1000) + 60 * 10
+      )
     );
     const receipt = await tx.wait();
     appendLog({ time: new Date().toISOString(), action: 'SELL', token, amountToken: amt, tx: tx.hash });
