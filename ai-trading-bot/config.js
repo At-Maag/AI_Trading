@@ -1,27 +1,10 @@
 module.exports = {
   SLIPPAGE: 0.005, // 0.5%
+  // Start with a minimal list. Additional tokens are loaded dynamically
+  // from the CoinGecko API at runtime via dynamicTokens.js
   coins: [
-    'ETH',     // Ethereum
-    'WETH',    // Wrapped Ether
-    'LINK',    // Chainlink
-    'UNI',     // Uniswap
-    'ARB',     // Arbitrum
-    'MATIC',   // Polygon
-    'WBTC',    // Wrapped Bitcoin
-    'AAVE',    // Aave
-    'COMP',    // Compound
-    'SUSHI',   // SushiSwap
-    'LDO',     // Lido DAO
-    'MKR',     // Maker
-    'CRV',     // Curve DAO
-    'GRT',     // The Graph
-    'ENS',     // Ethereum Name Service
-    '1INCH',   // 1inch
-    'DYDX',    // dYdX
-    'BAL',     // Balancer
-    'BNT',     // Bancor
-    'OCEAN'    // Ocean Protocol
-    // Removed BAND, RLC, AMPL, STORJ for now due to address or liquidity issues
+    'ETH',  // Ethereum
+    'WETH'  // Wrapped Ether
   ],
   RSI_PERIOD: 14,
   MACD_FAST: 12,

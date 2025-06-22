@@ -3,7 +3,9 @@
 // Addresses are normalized using ethers.utils.getAddress and validated at load
 // time to ensure checksum correctness.
 
-const { getAddress } = require('ethers').utils;
+// ethers v6 exposes helpers under ethers/lib/utils when using CommonJS.
+// Using this import avoids pulling in the full library during require.
+const { getAddress } = require('ethers/lib/utils');
 
 const TOKENS = {
   WETH: getAddress('0xC02aaA39b223fe8d0a0e5c4f27ead9083c756cc2'),

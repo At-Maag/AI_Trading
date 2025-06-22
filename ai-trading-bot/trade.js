@@ -15,18 +15,29 @@ const erc20Abi = [
   'function balanceOf(address) view returns (uint256)'
 ];
 
+const factoryAbi = [
+  'function getPair(address tokenA, address tokenB) external view returns (address pair)'
+];
+
+const pairAbi = [
+  'function getReserves() external view returns (uint112 reserve0, uint112 reserve1, uint32 blockTimestampLast)',
+  'function token0() external view returns (address)',
+  'function token1() external view returns (address)'
+];
+
 const provider = new ethers.InfuraProvider('mainnet', process.env.INFURA_API_KEY);
 const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
 const walletAddress = ethers.utils.getAddress(wallet.address);
 
-async function withRetry(fn, retries = 3, delay = 1500) {
+async function withRetry(fn, retries = 3, delay = 1000) {
   for (let i = 0; i < retries; i++) {
     try {
       return await fn();
     } catch (err) {
-      if (err.code === -32005 && i < retries - 1) {
-        console.warn(`[RETRY] RPC rate limit hit. Retrying in ${delay}ms...`);
-        await new Promise(res => setTimeout(res, delay));
+      if (i < retries - 1) {
+        const d = delay * 2 ** i;
+        console.warn(`[RETRY] ${err.message || err}. Waiting ${d}ms`);
+        await new Promise(res => setTimeout(res, d));
       } else {
         throw err;
       }
@@ -39,6 +50,9 @@ const router = new ethers.Contract(
   routerAbi,
   wallet
 );
+
+const factoryAddress = ethers.getAddress('0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f');
+const factory = new ethers.Contract(factoryAddress, factoryAbi, provider);
 
 const WETH_ADDRESS = TOKENS.WETH;
 
@@ -112,42 +126,35 @@ async function gasOkay() {
   return true;
 }
 
-async function hasLiquidity(amountEth, token) {
-  const tokenAddr = TOKENS[token.toUpperCase()];
-  if (!tokenAddr) return false;
+async function validateLiquidity(tokenA, tokenB) {
   try {
-    const amounts = await withRetry(() =>
-      router.getAmountsOut(
-        parseAmount(amountEth, 'ETH'),
-        [WETH_ADDRESS, tokenAddr]
-      )
-    );
-    return amounts && amounts[1] && amounts[1] > 0n;
-  } catch {
+    const pairAddr = await withRetry(() => factory.getPair(tokenA, tokenB));
+    if (pairAddr === ethers.ZeroAddress) {
+      console.log('[SKIP] No Uniswap pair found');
+      return false;
+    }
+    const pair = new ethers.Contract(pairAddr, pairAbi, provider);
+    const reserves = await withRetry(() => pair.getReserves());
+    const token0 = await withRetry(() => pair.token0());
+    const r0 = token0.toLowerCase() === tokenA.toLowerCase() ? reserves[0] : reserves[1];
+    const r1 = token0.toLowerCase() === tokenA.toLowerCase() ? reserves[1] : reserves[0];
+    if (r0 === 0n || r1 === 0n) {
+      console.log('[SKIP] Pair has zero reserves');
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.log(`[SKIP] Liquidity validation failed: ${err.message}`);
     return false;
   }
 }
 
-async function hasLiquidityForSell(amountToken, token) {
-  const tokenAddr = TOKENS[token.toUpperCase()];
-  if (!tokenAddr) return false;
-  try {
-    const amounts = await withRetry(() =>
-      router.getAmountsOut(
-        parseAmount(amountToken, token),
-        [tokenAddr, WETH_ADDRESS]
-      )
-    );
-    return amounts && amounts[1] && amounts[1] > 0n;
-  } catch {
-    return false;
-  }
-}
 
 async function buy(amountEth, path, token, opts = {}) {
   if (token && ['ETH', 'WETH'].includes(token.toUpperCase())) {
     return null;
   }
+  console.log(`[START] Buy ${token} at ${new Date().toISOString()}`);
   if (!await gasOkay()) return null;
   const tokenAddr = TOKENS[token.toUpperCase()];
   if (!tokenAddr) {
@@ -158,6 +165,10 @@ async function buy(amountEth, path, token, opts = {}) {
   const wethBal = await getTokenBalance(WETH_ADDRESS, walletAddress, 'WETH');
   if (amountEth > wethBal) {
     console.log(`[SKIP] Not enough WETH for ${token}`);
+    return null;
+  }
+  if (!await validateLiquidity(WETH_ADDRESS, tokenAddr)) {
+    appendLog({ time: new Date().toISOString(), action: 'SKIP', token, reason: 'liquidity' });
     return null;
   }
   try {
@@ -190,7 +201,15 @@ async function buy(amountEth, path, token, opts = {}) {
   }
   try {
     const amt = Number(amountEth).toFixed(6);
-    console.log(`[BUY] ${amt} WETH \u2192 ${token} \u2705`);
+    console.log(`[BUY] ${amt} WETH \u2192 ${token}`);
+    const gasEst = await withRetry(() => router.swapExactETHForTokens.estimateGas(
+      0,
+      swapPath,
+      walletAddress,
+      Math.floor(Date.now() / 1000) + 60 * 10,
+      { value: parseAmount(amt, 'ETH') }
+    ));
+    console.log(`[GAS] Estimated ${Number(gasEst)} units`);
     const tx = await withRetry(() =>
       router.swapExactETHForTokens(
         0,
@@ -204,7 +223,8 @@ async function buy(amountEth, path, token, opts = {}) {
     appendLog({ time: new Date().toISOString(), action: 'BUY', token, amountEth: amt, tx: tx.hash });
     return receipt;
   } catch (err) {
-    logError(`Failed to trade ETH \u2192 ${token} | ${err.stack || err}`);
+    const hash = err.transactionHash || (err.transaction && err.transaction.hash);
+    logError(`Failed to trade ETH \u2192 ${token} | ${err.message} ${hash ? '| tx ' + hash : ''}`);
     throw err;
   }
 }
@@ -213,6 +233,7 @@ async function sell(amountToken, path, token, opts = {}) {
   if (token && ['ETH', 'WETH'].includes(token.toUpperCase())) {
     return null;
   }
+  console.log(`[START] Sell ${token} at ${new Date().toISOString()}`);
   if (!await gasOkay()) return null;
   const tokenAddr = TOKENS[token.toUpperCase()];
   if (!tokenAddr) {
@@ -223,6 +244,10 @@ async function sell(amountToken, path, token, opts = {}) {
   const bal = await getTokenBalance(tokenAddr, walletAddress, token);
   if (amountToken > bal) {
     console.log(`[SKIP] Not enough ${token} to sell`);
+    return null;
+  }
+  if (!await validateLiquidity(tokenAddr, WETH_ADDRESS)) {
+    appendLog({ time: new Date().toISOString(), action: 'SKIP', token, reason: 'liquidity' });
     return null;
   }
   try {
@@ -255,7 +280,15 @@ async function sell(amountToken, path, token, opts = {}) {
   }
   try {
     const amt = Number(amountToken).toFixed(6);
-    console.log(`[SELL] ${token} \u2192 WETH \u2705`);
+    console.log(`[SELL] ${token} \u2192 WETH`);
+    const gasEst = await withRetry(() => router.swapExactTokensForETH.estimateGas(
+      parseAmount(amt, token),
+      0,
+      swapPath,
+      walletAddress,
+      Math.floor(Date.now() / 1000) + 60 * 10
+    ));
+    console.log(`[GAS] Estimated ${Number(gasEst)} units`);
     const tx = await withRetry(() =>
       router.swapExactTokensForETH(
         parseAmount(amt, token),
@@ -269,7 +302,8 @@ async function sell(amountToken, path, token, opts = {}) {
     appendLog({ time: new Date().toISOString(), action: 'SELL', token, amountToken: amt, tx: tx.hash });
     return receipt;
   } catch (err) {
-    logError(`Failed to trade ${token} \u2192 ETH | ${err.stack || err}`);
+    const hash = err.transactionHash || (err.transaction && err.transaction.hash);
+    logError(`Failed to trade ${token} \u2192 ETH | ${err.message} ${hash ? '| tx ' + hash : ''}`);
     throw err;
   }
 }
