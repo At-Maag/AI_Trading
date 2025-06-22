@@ -40,6 +40,24 @@ const TOKEN_ADDRESS_MAP = {
   STORJ: '0xb64ef51c888972c908cfacf59b47c1afbc0ab8ac'
 };
 
+// Decimal definitions for tokens. Default to 18, fallback to 6 if unknown
+const TOKEN_DECIMALS = {
+  ETH: 18,
+  WETH: 18
+};
+
+function getDecimals(token) {
+  const t = (token || '').toUpperCase();
+  if (TOKEN_DECIMALS[t]) return TOKEN_DECIMALS[t];
+  if (TOKEN_ADDRESS_MAP[t]) return 18;
+  return 6;
+}
+
+function parseAmount(amount, token) {
+  const decimals = getDecimals(token);
+  return ethers.parseUnits(Number(amount).toFixed(6), decimals);
+}
+
 const errorLogPath = path.join(__dirname, '..', 'logs', 'error-log.txt');
 
 function logError(err) {
@@ -86,7 +104,7 @@ async function hasLiquidity(amountEth, token) {
   if (!tokenAddr) return false;
   try {
     const amounts = await router.getAmountsOut(
-      ethers.parseEther(amountEth.toString()),
+      parseAmount(amountEth, 'ETH'),
       [WETH_ADDRESS, tokenAddr]
     );
     return amounts && amounts[1] && amounts[1] > 0n;
@@ -107,15 +125,16 @@ async function buy(amountEth, path, token) {
     return null;
   }
   try {
+    const amt = Number(amountEth).toFixed(6);
     const tx = await router.swapExactETHForTokens(
       0,
       swapPath,
       wallet.address,
       Math.floor(Date.now() / 1000) + 60 * 10,
-      { value: ethers.parseEther(amountEth.toString()) }
+      { value: parseAmount(amt, 'ETH') }
     );
     const receipt = await tx.wait();
-    appendLog({ time: new Date().toISOString(), action: 'BUY', token, amountEth, tx: tx.hash });
+    appendLog({ time: new Date().toISOString(), action: 'BUY', token, amountEth: amt, tx: tx.hash });
     return receipt;
   } catch (err) {
     logError(`Failed to trade ETH \u2192 ${token} | ${err.stack || err}`);
@@ -131,15 +150,16 @@ async function sell(amountToken, path, token) {
   const tokenAddr = TOKEN_ADDRESS_MAP[token.toUpperCase()];
   const swapPath = [tokenAddr, WETH_ADDRESS];
   try {
+    const amt = Number(amountToken).toFixed(6);
     const tx = await router.swapExactTokensForETH(
-      ethers.parseUnits(amountToken.toString(), 18),
+      parseAmount(amt, token),
       0,
       swapPath,
       wallet.address,
       Math.floor(Date.now() / 1000) + 60 * 10
     );
     const receipt = await tx.wait();
-    appendLog({ time: new Date().toISOString(), action: 'SELL', token, amountToken, tx: tx.hash });
+    appendLog({ time: new Date().toISOString(), action: 'SELL', token, amountToken: amt, tx: tx.hash });
     return receipt;
   } catch (err) {
     logError(`Failed to trade ${token} \u2192 ETH | ${err.stack || err}`);
