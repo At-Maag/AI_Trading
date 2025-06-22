@@ -19,35 +19,40 @@ const routerAbi = [
 
 const provider = new ethers.InfuraProvider('mainnet', process.env.INFURA_API_KEY);
 const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
-const router = new ethers.Contract('0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f', routerAbi, wallet); // placeholder address
+const walletAddress = ethers.utils.getAddress(wallet.address);
+const router = new ethers.Contract(
+  ethers.utils.getAddress('0x5c69bee701ef814a2b6a3edd4b1652cb9cc5aa6f'),
+  routerAbi,
+  wallet
+); // placeholder address
 
-const WETH = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2';
+const WETH = ethers.utils.getAddress('0xC02aaA39b223fe8d0a0e5c4f27ead9083c756cc2');
 
 const TOKEN_ADDRESSES = {
-  LINK: '0x514910771AF9Ca656af840dff83E8264EcF986CA',
-  UNI: '0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984',
-  ARB: '0x912CE59144191C1204E64559FE8253a0e49E6548',
-  MATIC: '0x7d1afa7b718fb893db30a3abc0cfc608aacfebb0',
-  WBTC: '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599',
-  AAVE: '0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DdAE9',
-  COMP: '0xc00e94Cb662C3520282E6f5717214004A7f26888',
-  SNX: '0xC011A72400E58ecD99Ee497CF89E3775d4bd732F',
-  SUSHI: '0x6B3595068778DD592e39A122f4f5a5cF09C90fE2',
-  LDO: '0x5A98FcBEA52BDdC8aB185592A42F5eDb2fA461Ff',
-  MKR: '0x9f8F72aA9304c8B593d555F12eF6589cC3A579A2',
-  CRV: '0xD533a949740bb3306d119CC777fa900bA034cd52',
-  GRT: '0xc944E90C64B2c07662A292be6244BDf05Cda44a7',
-  ENS: '0xC18360217D8F7Ab5E5eDd226bE63EDe2a818F5E9',
-  '1INCH': '0x111111111117dc0aa78b770fa6a738034120c302',
-  DYDX: '0x92D6C1e31e14520e676a687F0a93788B716BEff5',
-  BAL: '0xba100000625a3754423978a60c9317c58a424e3D',
-  BNT: '0x1f573D6FB3F13d689FF844B4cC5c5fBba64ec70B',
-  REN: '0x408e41876cCCDC0F92210600ef50372656052a38',
-  OCEAN: '0x967da4048cD07Ab37855c090aAF366e4ce1b9F48',
-  BAND: '0x5fF131C1739Bf7f2b63e1e6B6591EAd5e0ff9112',
-  RLC: '0x607F4C5BB672230e8672085532f7e901544a7375',
-  AMPL: '0xd46ba6d942050d489dbd938a2c909A5d5039A161',
-  STORJ: '0xB64E280e9D1B5DbEfaEeB9b253f4F2E405fdBe71'
+  LINK: ethers.utils.getAddress('0x514910771af9ca656af840dff83e8264ecf986ca'),
+  UNI: ethers.utils.getAddress('0x1f9840a85d5af5bf1d1762f925bdaddc4201f984'),
+  ARB: ethers.utils.getAddress('0x912ce59144191c1204e64559fe8253a0e49e6548'),
+  MATIC: ethers.utils.getAddress('0x7d1afa7b718fb893db30a3abc0cfc608aacfebb0'),
+  WBTC: ethers.utils.getAddress('0x2260fac5e5542a773aa44fbcfedf7c193bc2c599'),
+  AAVE: ethers.utils.getAddress('0x7fc66500c84a76ad7e9c93437bfc5ac33e2ddae9'),
+  COMP: ethers.utils.getAddress('0xc00e94cb662c3520282e6f5717214004a7f26888'),
+  SNX: ethers.utils.getAddress('0xc011a72400e58ecd99ee497cf89e3775d4bd732f'),
+  SUSHI: ethers.utils.getAddress('0x6b3595068778dd592e39a122f4f5a5cf09c90fe2'),
+  LDO: ethers.utils.getAddress('0x5a98fcbea52bddc8ab185592a42f5edb2fa461ff'),
+  MKR: ethers.utils.getAddress('0x9f8f72aa9304c8b593d555f12ef6589cc3a579a2'),
+  CRV: ethers.utils.getAddress('0xd533a949740bb3306d119cc777fa900ba034cd52'),
+  GRT: ethers.utils.getAddress('0xc944e90c64b2c07662a292be6244bdf05cda44a7'),
+  ENS: ethers.utils.getAddress('0xc18360217d8f7ab5e5edd226be63ede2a818f5e9'),
+  '1INCH': ethers.utils.getAddress('0x111111111117dc0aa78b770fa6a738034120c302'),
+  DYDX: ethers.utils.getAddress('0x92d6c1e31e14520e676a687f0a93788b716beff5'),
+  BAL: ethers.utils.getAddress('0xba100000625a3754423978a60c9317c58a424e3d'),
+  BNT: ethers.utils.getAddress('0x1f573d6fb3f13d689ff844b4cc5c5fbba64ec70b'),
+  REN: ethers.utils.getAddress('0x408e41876cccdc0f92210600ef50372656052a38'),
+  OCEAN: ethers.utils.getAddress('0x967da4048cd07ab37855c090aaf366e4ce1b9f48'),
+  BAND: ethers.utils.getAddress('0x5ff131c1739bf7f2b63e1e6b6591ead5e0ff9112'),
+  RLC: ethers.utils.getAddress('0x607f4c5bb672230e8672085532f7e901544a7375'),
+  AMPL: ethers.utils.getAddress('0xd46ba6d942050d489dbd938a2c909a5d5039a161'),
+  STORJ: ethers.utils.getAddress('0xb64e280e9d1b5dbefaeeb9b253f4f2e405fdbe71')
 };
 
 const history = {};
@@ -193,6 +198,7 @@ async function checkTrades(entries, ethPrice, isTop) {
 
         const tokenAddr = TOKEN_ADDRESSES[symbol];
         if (!tokenAddr) {
+          console.log("Token address is null, skipping trade.");
           continue;
         }
         if (!paper) {
@@ -217,7 +223,11 @@ async function checkTrades(entries, ethPrice, isTop) {
         if (!paper) {
           try {
             const tokenAddr = TOKEN_ADDRESSES[symbol];
-            await trade.sell(0.01, [tokenAddr, WETH], symbol, { simulate: isTop });
+            if (!tokenAddr) {
+              console.log("Token address is null, skipping trade.");
+            } else {
+              await trade.sell(0.01, [tokenAddr, WETH], symbol, { simulate: isTop });
+            }
           } catch (err) {
             logError(`Failed to trade ${symbol} \u2192 ETH | ${err.message}`);
           }
