@@ -156,14 +156,21 @@ async function checkTrades(entries) {
     }
 
     if (!activeTrades[symbol]) {
-      if (strategy.shouldBuy(symbol, closing)) {
+      const analysis = strategy.analyze(symbol, closing);
+      if (analysis && analysis.action === 'BUY') {
+        const confidence = analysis.confidence || 0;
         console.log(color(`\ud83d\udfe2 Signal: BUY ${symbol}`, 'green'));
         const balance = await trade.getEthBalance();
         const feeData = await provider.getFeeData();
         const gasPrice = feeData.gasPrice || ethers.parseUnits('0', 'gwei');
         const gasCost = Number(ethers.formatEther(gasPrice * 210000n));
         const available = Math.max(balance - gasCost, 0);
-        let amountEth = available * 0.10;
+        let pct = 0;
+        if (confidence >= 4) pct = 0.20;
+        else if (confidence === 3) pct = 0.10;
+        else if (confidence === 2) pct = 0.05;
+        else if (confidence === 1) pct = 0.02;
+        let amountEth = available * pct;
         if (amountEth <= 0) {
           console.log('Skipping trade - insufficient balance after gas.');
           continue;
@@ -185,18 +192,20 @@ async function checkTrades(entries) {
           console.log(`Skipping ${symbol} \u2014 insufficient liquidity.`);
           continue;
         }
+        const pctUsed = (pct * 100).toFixed(0);
         if (paper) {
-          console.log(color(`\ud83e\uddea PAPER TRADE: Simulated BUY ${symbol} at $${price}`, 'green'));
+          console.log(color(`[BUY] ${symbol} | Confidence: ${confidence} signals | ${pctUsed}% of wallet used (paper)`,'green'));
         } else {
           try {
             await trade.buy(amountEth, [WETH, tokenAddr], symbol);
           } catch (err) {
             logError(`Failed to trade ETH \u2192 ${symbol} | ${err.message}`);
           }
+          console.log(color(`[BUY] ${symbol} | Confidence: ${confidence} signals | ${pctUsed}% of wallet used`,'green'));
         }
         risk.updateEntry(symbol, price);
         activeTrades[symbol] = true;
-        logTrade('BUY', symbol, amountEth, price, 'signal');
+        logTrade('BUY', symbol, amountEth, price, `${confidence} signals`);
       }
     } else {
       const hitStop = risk.stopLoss(symbol, price);
