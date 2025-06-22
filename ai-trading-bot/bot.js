@@ -85,7 +85,6 @@ function logTrade(side, token, amount, price, reason, pnlPct) {
 let lastGroupBCheck = 0;
 let groupA = [];
 let groupB = [];
-let lastTopKey = '';
 
 const COLORS = {
   reset: '\x1b[0m',
@@ -116,38 +115,21 @@ function formatTable(rows, headers = []) {
   return out.join('\n');
 }
 
-function renderScan(list) {
-  if (!config.prettyLogs) return;
-  const ts = new Date().toISOString().replace('T', ' ').slice(0, 19);
-  const rows = list.map(r => [
-    r.symbol,
-    `$${r.price.toFixed(2)}`,
-    String(r.score),
-    r.signals.join(', ') || '-'
-  ]);
-  const table = formatTable(rows, ['Symbol', 'Price', 'Score', 'Matched Signals']);
-  console.log(`[${ts}] Scanned Coins:`);
-  console.log(table);
-}
 
 function renderSummary(list) {
   const top = list.slice(0, 5);
-  const key = top.map(r => r.symbol).join('-');
-  if (key !== lastTopKey) {
-    lastTopKey = key;
-    const ts = new Date().toISOString().replace('T', ' ').slice(0, 19);
-    if (config.prettyLogs) {
-      console.log(`[${ts}] ${color('=== 🏆 TOP 5 COINS (Highest Scores) ===', 'magenta')}`);
-      const rows = top.map(r => [
-        r.symbol,
-        `$${r.price.toFixed(2)}`,
-        String(r.score),
-        r.signals.join(', ') || '-'
-      ]);
-      console.log(formatTable(rows, ['Symbol', 'Price', 'Score', 'Matched Signals']));
-    } else {
-      console.log(`[${ts}] TOP 5: ` + top.map(r => `${r.symbol}:${r.score}`).join(' '));
-    }
+  const ts = new Date().toISOString().replace('T', ' ').slice(0, 19);
+  if (config.prettyLogs) {
+    console.log(`[${ts}] ${color('=== 🏆 TOP 5 COINS (Highest Scores) ===', 'magenta')}`);
+    const rows = top.map(r => [
+      r.symbol,
+      `$${r.price.toFixed(2)}`,
+      String(r.score),
+      r.signals.join(', ') || '-'
+    ]);
+    console.log(formatTable(rows, ['Symbol', 'Price', 'Score', 'Matched Signals']));
+  } else {
+    console.log(`[${ts}] TOP 5: ` + top.map(r => `${r.symbol}:${r.score}`).join(' '));
   }
   const others = list.slice(5).map(r => r.symbol).join(', ');
   if (others) {
@@ -171,30 +153,26 @@ async function evaluate(prices) {
   res.sort((a, b) => b.score - a.score);
   groupA = res.slice(0, 5).map(r => r.symbol);
   groupB = res.slice(5).map(r => r.symbol);
-  renderScan(res);
   renderSummary(res);
   return res;
 }
 
 async function checkTrades(entries) {
+  const buyMsgs = [];
+  const sellMsgs = [];
   for (const { symbol, price, closing, score, signals } of entries) {
     if (['ETH', 'WETH'].includes(symbol)) {
-      console.log('\u26a0\ufe0f Skipping ETH to ETH trade');
       continue;
     }
 
     if (closing.length < 14) {
-      console.log(`\u23f8 Waiting for more ${symbol} data (${closing.length}/14)`);
       continue;
     }
 
     if (!activeTrades[symbol]) {
       if (strategy.shouldBuy(symbol, closing)) {
-        if (config.prettyLogs) {
-          console.log(`✅ Signal: BUY ${symbol} | Score: ${score} | Price: $${price.toFixed(2)} | Reason: ${signals.join(', ')}`);
-        } else {
-          console.log(color(`\ud83d\udfe2 Signal: BUY ${symbol}`, 'green'));
-        }
+        const msg = `BUY ${symbol} | Score: ${score} | Price: $${price.toFixed(2)} | ${signals.join(', ')}`;
+        buyMsgs.push(color(msg, 'green'));
         const balance = await trade.getEthBalance();
         const feeData = await provider.getFeeData();
         const gasPrice = feeData.gasPrice || ethers.parseUnits('0', 'gwei');
@@ -202,13 +180,11 @@ async function checkTrades(entries) {
         const available = Math.max(balance - gasCost, 0);
         let amountEth = available * 0.10;
         if (amountEth <= 0) {
-          console.log('Skipping trade - insufficient balance after gas.');
           continue;
         }
 
         const tokenAddr = TOKEN_ADDRESSES[symbol];
         if (!tokenAddr) {
-          console.log(`Skipping ${symbol} - unknown token address.`);
           continue;
         }
         let amountsOut;
@@ -219,11 +195,10 @@ async function checkTrades(entries) {
           logError(`Liquidity check failed for ${symbol} | ${e.message}`);
         }
         if (!amountsOut || amountsOut <= 0n) {
-          console.log(`Skipping ${symbol} \u2014 insufficient liquidity.`);
           continue;
         }
         if (paper) {
-          console.log(color(`\ud83e\uddea PAPER TRADE: Simulated BUY ${symbol} at $${price}`, 'green'));
+          // paper mode, no trade executed
         } else {
           try {
             await trade.buy(amountEth, [WETH, tokenAddr], symbol);
@@ -244,7 +219,7 @@ async function checkTrades(entries) {
         const entry = risk.getEntry(symbol) || price;
         const pnl = ((price - entry) / entry) * 100;
         if (paper) {
-          console.log(color(`\ud83e\uddea PAPER TRADE: Simulated SELL ${symbol} at $${price}`, 'red'));
+          // paper mode, no trade executed
         } else {
           try {
             const tokenAddr = TOKEN_ADDRESSES[symbol];
@@ -253,15 +228,22 @@ async function checkTrades(entries) {
             logError(`Failed to trade ${symbol} \u2192 ETH | ${err.message}`);
           }
         }
-        if (config.prettyLogs && reason === 'signal') {
-          console.log(`✅ Signal: SELL ${symbol} | Score: ${score} | Price: $${price.toFixed(2)} | Reason: ${signals.join(', ')}`);
-        } else {
-          console.log(color(`\ud83d\udd34 SELL ${symbol} triggered by ${reason} at $${price} (${pnl.toFixed(2)}%)`, 'red'));
-        }
+        const sellMsg = reason === 'signal'
+          ? `SELL ${symbol} | Score: ${score} | Price: $${price.toFixed(2)} | ${signals.join(', ')}`
+          : `SELL ${symbol} triggered by ${reason} at $${price} (${pnl.toFixed(2)}%)`;
+        sellMsgs.push(color(sellMsg, 'red'));
         logTrade('SELL', symbol, 0.01, price, reason, pnl);
         activeTrades[symbol] = false;
       }
     }
+  }
+  if (buyMsgs.length) {
+    console.log(color('== BUY ==', 'green'));
+    buyMsgs.forEach(m => console.log(m));
+  }
+  if (sellMsgs.length) {
+    console.log(color('== SELL ==', 'red'));
+    sellMsgs.forEach(m => console.log(m));
   }
 }
 
