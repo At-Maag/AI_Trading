@@ -143,9 +143,11 @@ function renderSummary(list) {
 
 async function evaluate(prices) {
   const res = [];
+  const totalScans = config.coins.length;
   for (const [index, symbol] of config.coins.entries()) {
     const ts = new Date().toISOString().replace('T', ' ').slice(0, 19);
-    console.log(`[${ts}] Scanning ${index + 1}/${config.coins.length}: ${symbol}`);
+    console.log(`[${ts}] [Scan ${index + 1}/${totalScans}] === ♦ TOP 5 COINS (Highest Scores) ===`);
+    console.log(`[${ts}] Scanning ${index + 1}/${totalScans}: ${symbol}`);
     const price = prices[symbol.toLowerCase()];
     if (!price) continue;
     if (!history[symbol]) history[symbol] = [];
