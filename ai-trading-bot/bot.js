@@ -54,6 +54,8 @@ const history = {};
 let paper = process.env.PAPER === 'true';
 let activeTrades = {};
 
+let fullScanCount = 0;
+
 const logFile = path.join(__dirname, '..', 'data', 'trade-log.json');
 const tradeLogTxt = path.join(__dirname, '..', 'logs', 'trade-log.txt');
 const crashFile = path.join(__dirname, '..', 'logs', 'error-log.txt');
@@ -122,8 +124,9 @@ function formatTable(rows, headers = []) {
 function renderSummary(list) {
   const top = list.slice(0, 5);
   const ts = new Date().toISOString().replace('T', ' ').slice(0, 19);
+  fullScanCount++;
   if (config.prettyLogs) {
-    console.log(`[${ts}] ${color('=== 🏆 TOP 5 COINS (Highest Scores) ===', 'magenta')}`);
+    console.log(`[${ts}] [Scan ${fullScanCount}/14] ${color('=== 🏆 TOP 5 COINS (Highest Scores) ===', 'magenta')}`);
     const rows = top.map(r => [
       r.symbol,
       `$${r.price.toFixed(2)}`,
@@ -132,7 +135,7 @@ function renderSummary(list) {
     ]);
     console.log(formatTable(rows, ['Symbol', 'Price', 'Score', 'Matched Signals']));
   } else {
-    console.log(`[${ts}] TOP 5: ` + top.map(r => `${r.symbol}:${r.score}`).join(' '));
+    console.log(`[${ts}] [Scan ${fullScanCount}/14] TOP 5: ` + top.map(r => `${r.symbol}:${r.score}`).join(' '));
   }
   const others = list.slice(5).map(r => r.symbol).join(', ');
   if (others) {
@@ -146,8 +149,8 @@ async function evaluate(prices) {
   const totalScans = config.coins.length;
   for (const [index, symbol] of config.coins.entries()) {
     const ts = new Date().toISOString().replace('T', ' ').slice(0, 19);
-    console.log(`[${ts}] [Scan ${index + 1}/${totalScans}] === ♦ TOP 5 COINS (Highest Scores) ===`);
-    console.log(`[${ts}] Scanning ${index + 1}/${totalScans}: ${symbol}`);
+    // console.log(`[${ts}] [Scan ${index + 1}/${totalScans}] === ♦ TOP 5 COINS (Highest Scores) ===`);
+    // console.log(`[${ts}] Scanning ${index + 1}/${totalScans}: ${symbol}`);
     const price = prices[symbol.toLowerCase()];
     if (!price) continue;
     if (!history[symbol]) history[symbol] = [];
