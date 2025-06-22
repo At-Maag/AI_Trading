@@ -10,6 +10,10 @@ const routerAbi = [
   'function getAmountsOut(uint amountIn, address[] calldata path) external view returns (uint[] memory amounts)'
 ];
 
+const erc20Abi = [
+  'function balanceOf(address) view returns (uint256)'
+];
+
 const provider = new ethers.InfuraProvider('mainnet', process.env.INFURA_API_KEY);
 const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
 // Uniswap V2 Router
@@ -57,6 +61,16 @@ function parseAmount(amount, token) {
   const decimals = getDecimals(token);
   const tradeAmount = ethers.parseUnits(Number(amount).toFixed(6), decimals || 18);
   return tradeAmount;
+}
+
+async function getTokenBalance(tokenAddr, account, symbol) {
+  try {
+    const contract = new ethers.Contract(tokenAddr, erc20Abi, provider);
+    const bal = await contract.balanceOf(account);
+    return Number(ethers.formatUnits(bal, getDecimals(symbol)));
+  } catch {
+    return 0;
+  }
 }
 
 const errorLogPath = path.join(__dirname, '..', 'logs', 'error-log.txt');
@@ -114,6 +128,20 @@ async function hasLiquidity(amountEth, token) {
   }
 }
 
+async function hasLiquidityForSell(amountToken, token) {
+  const tokenAddr = TOKEN_ADDRESS_MAP[token.toUpperCase()];
+  if (!tokenAddr) return false;
+  try {
+    const amounts = await router.getAmountsOut(
+      parseAmount(amountToken, token),
+      [tokenAddr, WETH_ADDRESS]
+    );
+    return amounts && amounts[1] && amounts[1] > 0n;
+  } catch {
+    return false;
+  }
+}
+
 async function buy(amountEth, path, token) {
   if (token && ['ETH', 'WETH'].includes(token.toUpperCase())) {
     return null;
@@ -121,12 +149,18 @@ async function buy(amountEth, path, token) {
   if (!await gasOkay()) return null;
   const tokenAddr = TOKEN_ADDRESS_MAP[token.toUpperCase()];
   const swapPath = [WETH_ADDRESS, tokenAddr];
+  const wethBal = await getTokenBalance(WETH_ADDRESS, wallet.address, 'WETH');
+  if (amountEth > wethBal) {
+    console.log(`\u26a0\ufe0f Not enough WETH. Need: ${amountEth}, Have: ${wethBal}`);
+    return null;
+  }
   if (!await hasLiquidity(amountEth, token)) {
     appendLog({ time: new Date().toISOString(), action: 'SKIP', token, reason: 'liquidity' });
     return null;
   }
   try {
     const amt = Number(amountEth).toFixed(6);
+    console.log(`== BUY ${token} == | Amount ETH: ${amt}`);
     const tx = await router.swapExactETHForTokens(
       0,
       swapPath,
@@ -150,8 +184,18 @@ async function sell(amountToken, path, token) {
   if (!await gasOkay()) return null;
   const tokenAddr = TOKEN_ADDRESS_MAP[token.toUpperCase()];
   const swapPath = [tokenAddr, WETH_ADDRESS];
+  const bal = await getTokenBalance(tokenAddr, wallet.address, token);
+  if (amountToken > bal) {
+    console.log(`\u26a0\ufe0f Not enough ${token} to sell. Needed: ${amountToken}, Have: ${bal}`);
+    return null;
+  }
+  if (!await hasLiquidityForSell(amountToken, token)) {
+    appendLog({ time: new Date().toISOString(), action: 'SKIP', token, reason: 'liquidity' });
+    return null;
+  }
   try {
     const amt = Number(amountToken).toFixed(6);
+    console.log(`== SELL ${token} == | Amount: ${amt}`);
     const tx = await router.swapExactTokensForETH(
       parseAmount(amt, token),
       0,
