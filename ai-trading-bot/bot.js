@@ -189,15 +189,9 @@ async function checkTrades(entries, ethPrice) {
         const gasCost = Number(ethers.formatEther(gasPrice * 210000n));
         const available = Math.max(balance - gasCost, 0);
 
-        const capitalUsd = available * ethPrice;
-        const usdAmount = risk.calculatePositionSize(score, capitalUsd);
-        if (usdAmount < MIN_TRADE_USD) {
-          console.log(`Skipping ${symbol} — below $${MIN_TRADE_USD}`);
-          continue;
-        }
-
-        let amountEth = usdAmount / ethPrice;
+        const amountEth = risk.calculatePositionSize(score, available, ethPrice);
         if (amountEth <= 0) {
+          console.log(`Skipping ${symbol} — below $${MIN_TRADE_USD}`);
           continue;
         }
 
@@ -207,7 +201,10 @@ async function checkTrades(entries, ethPrice) {
         }
         let amountsOut;
         try {
-          const out = await router.getAmountsOut(ethers.parseEther(amountEth.toString()), [WETH, tokenAddr]);
+          const out = await router.getAmountsOut(
+            ethers.parseEther(amountEth.toFixed(6)),
+            [WETH, tokenAddr]
+          );
           amountsOut = out && out[1];
         } catch (e) {
           logError(`Liquidity check failed for ${symbol} | ${e.message}`);
