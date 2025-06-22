@@ -35,5 +35,6 @@ module.exports = {
   TAKE_PROFIT: 0.08, // 8%
   TRAILING_STOP: 0.02,
   GAS_LIMIT_GWEI: 80,
-  TRADE_ALLOCATION: 0.22
+  TRADE_ALLOCATION: 0.22,
+  prettyLogs: true
 };
