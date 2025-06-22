@@ -1,6 +1,11 @@
-const { getAddress } = require('ethers');
+// Token address configuration and validation helpers
+// This file exports a map of token symbols to checksummed Ethereum addresses.
+// Addresses are normalized using ethers.utils.getAddress and validated at load
+// time to ensure checksum correctness.
 
-module.exports = {
+const { getAddress } = require('ethers').utils;
+
+const TOKENS = {
   WETH: getAddress('0xC02aaA39b223fe8d0a0e5c4f27ead9083c756cc2'),
   LINK: getAddress('0x514910771af9ca656af840dff83e8264ecf986ca'),
   UNI: getAddress('0x1f9840a85d5af5bf1d1762f925bdaddc4201f984'),
@@ -25,5 +30,16 @@ module.exports = {
   BAND: getAddress('0xba11d479a30a3dba9281e1d8e6ce942ca109b3a6'),
   RLC: getAddress('0x607f4c5bb672230e8672085532f7e901544a7375'),
   AMPL: getAddress('0xd46ba6d942050d489dbd938a2c909a5d5039a161'),
-  STORJ: getAddress('0xb64ef51c888972c908cfacf59b47c1afbc0ab8ac')
+  STORJ: getAddress('0xb64ef51c888972c908cfacf59b47c1afbc0ab8ac'),
 };
+
+Object.entries(TOKENS).forEach(([symbol, addr]) => {
+  try {
+    TOKENS[symbol] = getAddress(addr);
+  } catch (err) {
+    console.error(`\u274c Invalid address for ${symbol}: ${addr}`);
+    throw err;
+  }
+});
+
+module.exports = TOKENS;
