@@ -67,8 +67,7 @@ function analyze(symbol, prices) {
 
   const aggressive = process.env.AGGRESSIVE === 'true';
 
-  // Log all signals for transparency
-  console.log(`${symbol} trade check:`, signals);
+  // Previously logged signals for debugging; removed for cleaner output
 
   if ((aggressive && signals.length >= 2) || signals.length >= 3) {
     return { action: 'BUY', confidence: signals.length, reasons: signals };

@@ -74,7 +74,6 @@ async function gasOkay() {
   const gasPrice = feeData.gasPrice || ethers.parseUnits('0', 'gwei');
   if (gasPrice > ethers.parseUnits(config.GAS_LIMIT_GWEI.toString(), 'gwei')) {
     const gwei = Number(ethers.formatUnits(gasPrice, 'gwei')).toFixed(1);
-    console.log(`\u26FD Gas ${gwei} gwei exceeds limit`);
     logError(`Gas price ${gwei} gwei exceeds limit`);
     appendLog({ time: new Date().toISOString(), action: 'SKIP', reason: 'Gas high', gas: gwei });
     return false;
@@ -98,14 +97,12 @@ async function hasLiquidity(amountEth, token) {
 
 async function buy(amountEth, path, token) {
   if (token && ['ETH', 'WETH'].includes(token.toUpperCase())) {
-    console.log('\u26a0\ufe0f Skipping ETH to ETH trade');
     return null;
   }
   if (!await gasOkay()) return null;
   const tokenAddr = TOKEN_ADDRESS_MAP[token.toUpperCase()];
   const swapPath = [WETH_ADDRESS, tokenAddr];
   if (!await hasLiquidity(amountEth, token)) {
-    console.log(`Insufficient liquidity for ETH\u2192${token}`);
     appendLog({ time: new Date().toISOString(), action: 'SKIP', token, reason: 'liquidity' });
     return null;
   }
@@ -128,7 +125,6 @@ async function buy(amountEth, path, token) {
 
 async function sell(amountToken, path, token) {
   if (token && ['ETH', 'WETH'].includes(token.toUpperCase())) {
-    console.log('\u26a0\ufe0f Skipping ETH to ETH trade');
     return null;
   }
   if (!await gasOkay()) return null;

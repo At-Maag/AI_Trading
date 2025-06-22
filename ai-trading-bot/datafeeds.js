@@ -29,14 +29,12 @@ const ID_MAP = {
 };
 
 async function getPrices() {
-  console.log("\ud83d\udce1 Fetching prices from CoinGecko...");
   try {
     const ids = Object.values(ID_MAP).join(',');
     const res = await axios.get(
       "https://api.coingecko.com/api/v3/simple/price",
       { params: { ids, vs_currencies: "usd" } }
     );
-    console.log("\u2705 Price data:", res.data);
     const prices = {};
     for (const [symbol, id] of Object.entries(ID_MAP)) {
       prices[symbol.toLowerCase()] = res.data[id]?.usd;
