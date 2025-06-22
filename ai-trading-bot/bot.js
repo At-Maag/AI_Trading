@@ -8,6 +8,9 @@ const path = require('path');
 const { ethers } = require('ethers');
 const config = require('./config');
 
+const MIN_TRADE_USD = 10;
+console.debug = () => {};
+
 const routerAbi = [
   'function swapExactETHForTokens(uint amountOutMin, address[] calldata path, address to, uint deadline) payable returns (uint[] memory amounts)',
   'function swapExactTokensForETH(uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline) returns (uint[] memory amounts)',
@@ -140,7 +143,9 @@ function renderSummary(list) {
 
 async function evaluate(prices) {
   const res = [];
-  for (const symbol of config.coins) {
+  for (const [index, symbol] of config.coins.entries()) {
+    const ts = new Date().toISOString().replace('T', ' ').slice(0, 19);
+    console.log(`[${ts}] Scanning ${index + 1}/${config.coins.length}: ${symbol}`);
     const price = prices[symbol.toLowerCase()];
     if (!price) continue;
     if (!history[symbol]) history[symbol] = [];
@@ -157,7 +162,7 @@ async function evaluate(prices) {
   return res;
 }
 
-async function checkTrades(entries) {
+async function checkTrades(entries, ethPrice) {
   const buyMsgs = [];
   const sellMsgs = [];
   for (const { symbol, price, closing, score, signals } of entries) {
@@ -178,7 +183,15 @@ async function checkTrades(entries) {
         const gasPrice = feeData.gasPrice || ethers.parseUnits('0', 'gwei');
         const gasCost = Number(ethers.formatEther(gasPrice * 210000n));
         const available = Math.max(balance - gasCost, 0);
-        let amountEth = available * 0.10;
+
+        const capitalUsd = available * ethPrice;
+        const usdAmount = risk.calculatePositionSize(score, capitalUsd);
+        if (usdAmount < MIN_TRADE_USD) {
+          console.log(`Skipping ${symbol} — below $${MIN_TRADE_USD}`);
+          continue;
+        }
+
+        let amountEth = usdAmount / ethPrice;
         if (amountEth <= 0) {
           continue;
         }
@@ -253,10 +266,11 @@ async function loop() {
     const prices = await getPrices();
     if (!prices) return;
     const evaluations = await evaluate(prices);
-    await checkTrades(evaluations.filter(e => groupA.includes(e.symbol)));
+    const ethPrice = prices.eth;
+    await checkTrades(evaluations.filter(e => groupA.includes(e.symbol)), ethPrice);
     const now = Date.now();
     if (now - lastGroupBCheck >= 5 * 60 * 1000) {
-      await checkTrades(evaluations.filter(e => groupB.includes(e.symbol)));
+      await checkTrades(evaluations.filter(e => groupB.includes(e.symbol)), ethPrice);
       lastGroupBCheck = now;
     }
   } catch (err) {

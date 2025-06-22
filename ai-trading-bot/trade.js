@@ -55,7 +55,8 @@ function getDecimals(token) {
 
 function parseAmount(amount, token) {
   const decimals = getDecimals(token);
-  return ethers.parseUnits(Number(amount).toFixed(6), decimals);
+  const tradeAmount = ethers.parseUnits(Number(amount).toFixed(6), decimals || 18);
+  return tradeAmount;
 }
 
 const errorLogPath = path.join(__dirname, '..', 'logs', 'error-log.txt');
