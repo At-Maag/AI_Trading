@@ -34,14 +34,15 @@ async function refreshTokenList() {
   }
 }
 
-async function withRetry(fn, retries = 3, delay = 1500) {
+async function withRetry(fn, retries = 3, delay = 1000) {
   for (let i = 0; i < retries; i++) {
     try {
       return await fn();
     } catch (err) {
-      if (err.code === -32005 && i < retries - 1) {
-        console.warn(`[RETRY] RPC rate limit hit. Retrying in ${delay}ms...`);
-        await new Promise(res => setTimeout(res, delay));
+      if (i < retries - 1) {
+        const d = delay * 2 ** i;
+        console.warn(`[RETRY] ${err.message || err}. Waiting ${d}ms`);
+        await new Promise(res => setTimeout(res, d));
       } else {
         throw err;
       }
@@ -269,5 +270,9 @@ function main() {
   }, 60 * 1000);
 }
 
-main();
+try {
+  main();
+} catch (err) {
+  logError(`Startup failure | ${err.stack || err}`);
+}
 
