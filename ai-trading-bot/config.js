@@ -1,30 +1,27 @@
 module.exports = {
   SLIPPAGE: 0.005, // 0.5%
   coins: [
-    'ETH',      // Ethereum
-    'LINK',     // Chainlink
-    'UNI',      // Uniswap
-    'ARB',      // Arbitrum
-    'MATIC',    // Polygon
-    'WBTC',     // Wrapped Bitcoin
-    'AAVE',     // Aave
-    'COMP',     // Compound
-    'SNX',      // Synthetix
-    'SUSHI',    // SushiSwap
-    'LDO',      // Lido DAO
-    'MKR',      // Maker
-    'CRV',      // Curve DAO
-    'GRT',      // The Graph
-    'ENS',      // Ethereum Name Service
-    '1INCH',    // 1inch
-    'DYDX',     // dYdX
-    'BAL',      // Balancer
-    'BNT',      // Bancor
-    'OCEAN',    // Ocean Protocol
-    'BAND',     // Band Protocol
-    'RLC',      // iExec RLC
-    'AMPL',     // Ampleforth
-    'STORJ'     // Storj
+    'ETH',     // Ethereum
+    'WETH',    // Wrapped Ether
+    'LINK',    // Chainlink
+    'UNI',     // Uniswap
+    'ARB',     // Arbitrum
+    'MATIC',   // Polygon
+    'WBTC',    // Wrapped Bitcoin
+    'AAVE',    // Aave
+    'COMP',    // Compound
+    'SUSHI',   // SushiSwap
+    'LDO',     // Lido DAO
+    'MKR',     // Maker
+    'CRV',     // Curve DAO
+    'GRT',     // The Graph
+    'ENS',     // Ethereum Name Service
+    '1INCH',   // 1inch
+    'DYDX',    // dYdX
+    'BAL',     // Balancer
+    'BNT',     // Bancor
+    'OCEAN'    // Ocean Protocol
+    // Removed BAND, RLC, AMPL, STORJ for now due to address or liquidity issues
   ],
   RSI_PERIOD: 14,
   MACD_FAST: 12,
