@@ -16,32 +16,37 @@ const erc20Abi = [
 
 const provider = new ethers.InfuraProvider('mainnet', process.env.INFURA_API_KEY);
 const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
+const walletAddress = ethers.utils.getAddress(wallet.address);
 // Uniswap V2 Router
-const router = new ethers.Contract('0x7a250d5630B4cF539739df2C5dAcb4c659F2488D', routerAbi, wallet);
+const router = new ethers.Contract(
+  ethers.utils.getAddress('0x7a250d5630b4cf539739df2c5dacb4c659f2488d'),
+  routerAbi,
+  wallet
+);
 
-const WETH_ADDRESS = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2';
+const WETH_ADDRESS = ethers.utils.getAddress('0xC02aaA39b223fe8d0a0e5c4f27ead9083c756cc2');
 const TOKEN_ADDRESS_MAP = {
-  LINK: '0x514910771AF9Ca656af840dff83E8264EcF986CA',
-  UNI: '0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984',
-  MATIC: '0x7d1afa7b718fb893db30a3abc0cfc608aacfebb0',
-  WBTC: '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599',
-  AAVE: '0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9',
-  COMP: '0xc00e94Cb662C3520282E6f5717214004A7f26888',
-  SNX: '0xC011A72400E58ecD99Ee497CF89E3775d4bd732F',
-  SUSHI: '0x6B3595068778dd592e39A122f4f5a5CF09C90fE2',
-  LDO: '0x5A98FcBEA516Cf06857215779Fd812CA3beF1B32',
-  MKR: '0x9f8F72aa9304c8B593d555F12eF6589Cc3A579A2',
-  CRV: '0xD533a949740bb3306d119CC777fa900bA034cd52',
-  GRT: '0xc944E90C64B2c07662A292be6244BDf05Cda44a7',
-  '1INCH': '0x111111111117dC0aa78b770fA6A738034120C302',
-  DYDX: '0x92D6C1e31e14520e676a687F0a93788B716BEff5',
-  BAL: '0xba100000625a3754423978a60c9317c58a424e3D',
-  BNT: '0x1f573d6fb3f13d689ff844b4c6deebd4994e9e6f',
-  OCEAN: '0x967da4048cd07ab37855c090aaf366e4ce1b9f48',
-  BAND: '0xba11d479a30a3DbA9281e1D8E6cE942Ca109b3A6',
-  RLC: '0x607F4C5BB672230e8672085532f7e901544a7375',
-  AMPL: '0xd46ba6D942050d489DBd938a2c3d573929F443ac',
-  STORJ: '0xb64ef51c888972c908cfacf59b47c1afbc0ab8ac'
+  LINK: ethers.utils.getAddress('0x514910771af9ca656af840dff83e8264ecf986ca'),
+  UNI: ethers.utils.getAddress('0x1f9840a85d5af5bf1d1762f925bdaddc4201f984'),
+  MATIC: ethers.utils.getAddress('0x7d1afa7b718fb893db30a3abc0cfc608aacfebb0'),
+  WBTC: ethers.utils.getAddress('0x2260fac5e5542a773aa44fbcfedf7c193bc2c599'),
+  AAVE: ethers.utils.getAddress('0x7fc66500c84a76ad7e9c93437bfc5ac33e2ddae9'),
+  COMP: ethers.utils.getAddress('0xc00e94cb662c3520282e6f5717214004a7f26888'),
+  SNX: ethers.utils.getAddress('0xc011a72400e58ecd99ee497cf89e3775d4bd732f'),
+  SUSHI: ethers.utils.getAddress('0x6b3595068778dd592e39a122f4f5a5cf09c90fe2'),
+  LDO: ethers.utils.getAddress('0x5a98fcbea516cf06857215779fd812ca3bef1b32'),
+  MKR: ethers.utils.getAddress('0x9f8f72aa9304c8b593d555f12ef6589cc3a579a2'),
+  CRV: ethers.utils.getAddress('0xd533a949740bb3306d119cc777fa900ba034cd52'),
+  GRT: ethers.utils.getAddress('0xc944e90c64b2c07662a292be6244bdf05cda44a7'),
+  '1INCH': ethers.utils.getAddress('0x111111111117dc0aa78b770fa6a738034120c302'),
+  DYDX: ethers.utils.getAddress('0x92d6c1e31e14520e676a687f0a93788b716beff5'),
+  BAL: ethers.utils.getAddress('0xba100000625a3754423978a60c9317c58a424e3d'),
+  BNT: ethers.utils.getAddress('0x1f573d6fb3f13d689ff844b4c6deebd4994e9e6f'),
+  OCEAN: ethers.utils.getAddress('0x967da4048cd07ab37855c090aaf366e4ce1b9f48'),
+  BAND: ethers.utils.getAddress('0xba11d479a30a3dba9281e1d8e6ce942ca109b3a6'),
+  RLC: ethers.utils.getAddress('0x607f4c5bb672230e8672085532f7e901544a7375'),
+  AMPL: ethers.utils.getAddress('0xd46ba6d942050d489dbd938a2c3d573929f443ac'),
+  STORJ: ethers.utils.getAddress('0xb64ef51c888972c908cfacf59b47c1afbc0ab8ac')
 };
 
 // Decimal definitions for tokens. Default to 18, fallback to 6 if unknown
@@ -148,26 +153,39 @@ async function buy(amountEth, path, token, opts = {}) {
   }
   if (!await gasOkay()) return null;
   const tokenAddr = TOKEN_ADDRESS_MAP[token.toUpperCase()];
+  if (!tokenAddr) {
+    console.log("Token address is null, skipping trade.");
+    return null;
+  }
   const swapPath = [WETH_ADDRESS, tokenAddr];
-  const wethBal = await getTokenBalance(WETH_ADDRESS, wallet.address, 'WETH');
+  const wethBal = await getTokenBalance(WETH_ADDRESS, walletAddress, 'WETH');
   if (amountEth > wethBal) {
     console.log(`[SKIP] Not enough WETH for ${token}`);
     return null;
   }
-  if (opts.simulate) {
-    try {
-      await router.swapExactETHForTokens.staticCall(
-        0,
-        swapPath,
-        wallet.address,
-        Math.floor(Date.now() / 1000) + 60 * 10,
-        { value: parseAmount(Number(amountEth).toFixed(6), 'ETH') }
-      );
-    } catch {
-      console.log(`[SKIP] Not enough liquidity or trade amount too low for ${token}`);
+  try {
+    const amounts = await router.getAmountsOut(
+      parseAmount(amountEth, 'ETH'),
+      swapPath
+    );
+    if (!amounts || !amounts[1] || amounts[1] === 0n) {
+      console.log(`[SKIP] Not enough liquidity for ${token}`);
       appendLog({ time: new Date().toISOString(), action: 'SKIP', token, reason: 'liquidity' });
       return null;
     }
+    if (opts.simulate) {
+      await router.swapExactETHForTokens.staticCall(
+        0,
+        swapPath,
+        walletAddress,
+        Math.floor(Date.now() / 1000) + 60 * 10,
+        { value: parseAmount(Number(amountEth).toFixed(6), 'ETH') }
+      );
+    }
+  } catch (err) {
+    console.log(`[SKIP] Unable to get quote for ${token}: ${err.message}`);
+    appendLog({ time: new Date().toISOString(), action: 'SKIP', token, reason: 'liquidity' });
+    return null;
   }
   try {
     const amt = Number(amountEth).toFixed(6);
@@ -175,7 +193,7 @@ async function buy(amountEth, path, token, opts = {}) {
     const tx = await router.swapExactETHForTokens(
       0,
       swapPath,
-      wallet.address,
+      walletAddress,
       Math.floor(Date.now() / 1000) + 60 * 10,
       { value: parseAmount(amt, 'ETH') }
     );
@@ -194,27 +212,37 @@ async function sell(amountToken, path, token, opts = {}) {
   }
   if (!await gasOkay()) return null;
   const tokenAddr = TOKEN_ADDRESS_MAP[token.toUpperCase()];
+  if (!tokenAddr) {
+    console.log("Token address is null, skipping trade.");
+    return null;
+  }
   const swapPath = [tokenAddr, WETH_ADDRESS];
-  const bal = await getTokenBalance(tokenAddr, wallet.address, token);
+  const bal = await getTokenBalance(tokenAddr, walletAddress, token);
   if (amountToken > bal) {
     console.log(`[SKIP] Not enough ${token} to sell`);
     return null;
   }
-  if (opts.simulate) {
-    try {
+  try {
+    const amounts = await router.getAmountsOut(
+      parseAmount(amountToken, token),
+      swapPath
+    );
+    if (!amounts || !amounts[1] || amounts[1] === 0n) {
+      console.log(`[SKIP] Not enough liquidity for ${token}`);
+      appendLog({ time: new Date().toISOString(), action: 'SKIP', token, reason: 'liquidity' });
+      return null;
+    }
+    if (opts.simulate) {
       await router.swapExactTokensForETH.staticCall(
         parseAmount(Number(amountToken).toFixed(6), token),
         0,
         swapPath,
-        wallet.address,
+        walletAddress,
         Math.floor(Date.now() / 1000) + 60 * 10
       );
-    } catch {
-      console.log(`[SKIP] Not enough liquidity or trade amount too low for ${token}`);
-      appendLog({ time: new Date().toISOString(), action: 'SKIP', token, reason: 'liquidity' });
-      return null;
     }
-  } else if (!await hasLiquidityForSell(amountToken, token)) {
+  } catch (err) {
+    console.log(`[SKIP] Unable to get quote for ${token}: ${err.message}`);
     appendLog({ time: new Date().toISOString(), action: 'SKIP', token, reason: 'liquidity' });
     return null;
   }
@@ -225,7 +253,7 @@ async function sell(amountToken, path, token, opts = {}) {
       parseAmount(amt, token),
       0,
       swapPath,
-      wallet.address,
+      walletAddress,
       Math.floor(Date.now() / 1000) + 60 * 10
     );
     const receipt = await tx.wait();
@@ -238,7 +266,7 @@ async function sell(amountToken, path, token, opts = {}) {
 }
 
 async function getEthBalance() {
-  const bal = await provider.getBalance(wallet.address);
+  const bal = await provider.getBalance(walletAddress);
   return Number(ethers.formatEther(bal));
 }
 
