@@ -1,7 +1,7 @@
 module.exports = {
   SLIPPAGE: 0.005, // 0.5%
   // Start with a minimal list. Additional tokens are loaded dynamically
-  // from the CoinGecko API at runtime via dynamicTokens.js
+  // from the CoinGecko API at runtime via top25.js
   coins: [
     'ETH',  // Ethereum
     'WETH'  // Wrapped Ether

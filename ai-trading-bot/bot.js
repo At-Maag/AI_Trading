@@ -6,9 +6,10 @@ const risk = require('./risk');
 const fs = require('fs');
 const path = require('path');
 const { ethers } = require('ethers');
+const { getAddress } = require('ethers/lib/utils');
 const config = require('./config');
 const TOKENS = require('./tokens');
-const { getValidTokens } = require('./dynamicTokens');
+const { getValidTokens } = require('./top25');
 
 const MIN_TRADE_USD = 10;
 console.debug = () => {};
@@ -21,7 +22,7 @@ const routerAbi = [
 
 const provider = new ethers.InfuraProvider('mainnet', process.env.INFURA_API_KEY);
 const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
-const walletAddress = ethers.utils.getAddress(wallet.address);
+const walletAddress = getAddress(wallet.address);
 
 let validTokens = [];
 
@@ -50,7 +51,7 @@ async function withRetry(fn, retries = 3, delay = 1000) {
   }
 }
 const router = new ethers.Contract(
-  ethers.utils.getAddress('0x5c69bee701ef814a2b6a3edd4b1652cb9cc5aa6f'),
+  getAddress('0x5c69bee701ef814a2b6a3edd4b1652cb9cc5aa6f'),
   routerAbi,
   wallet
 ); // placeholder address
@@ -59,6 +60,7 @@ const WETH = TOKENS.WETH;
 
 const history = {};
 let paper = process.env.PAPER === 'true';
+const DRY_RUN = process.env.DRY_RUN === 'true';
 let activeTrades = {};
 
 let fullScanCount = 0;
@@ -88,7 +90,8 @@ function logTrade(side, token, amount, price, reason, pnlPct) {
   fs.writeFileSync(logFile, JSON.stringify(trades, null, 2));
 
   try { fs.mkdirSync(path.dirname(tradeLogTxt), { recursive: true }); } catch {}
-  let line = `[${entry.time}] ${side} ${token} ${amount} @ $${price}`;
+  const emoji = '💰';
+  let line = `${emoji} [${entry.time}] ${side} ${token} ${amount} @ $${price}`;
   if (reason) line += ` (${reason})`;
   if (typeof pnlPct === 'number') line += ` PnL ${pnlPct.toFixed(2)}%`;
   fs.appendFileSync(tradeLogTxt, line + '\n');
@@ -205,10 +208,12 @@ async function checkTrades(entries, ethPrice, isTop) {
         }
         if (!paper) {
           try {
-            await trade.buy(amountEth, [WETH, tokenAddr], symbol, { simulate: isTop });
+            await trade.buy(amountEth, [WETH, tokenAddr], symbol, { simulate: isTop, dryRun: DRY_RUN });
           } catch (err) {
             logError(`Failed to trade ETH \u2192 ${symbol} | ${err.message}`);
           }
+        } else {
+          await trade.buy(amountEth, [WETH, tokenAddr], symbol, { simulate: isTop, dryRun: true });
         }
         risk.updateEntry(symbol, price);
         activeTrades[symbol] = true;
@@ -228,10 +233,15 @@ async function checkTrades(entries, ethPrice, isTop) {
             if (!tokenAddr) {
               console.log("Token address is null, skipping trade.");
             } else {
-              await trade.sell(0.01, [tokenAddr, WETH], symbol, { simulate: isTop });
+              await trade.sell(0.01, [tokenAddr, WETH], symbol, { simulate: isTop, dryRun: DRY_RUN });
             }
           } catch (err) {
             logError(`Failed to trade ${symbol} \u2192 ETH | ${err.message}`);
+          }
+        } else {
+          const tokenAddr = TOKENS[symbol.toUpperCase()];
+          if (tokenAddr) {
+            await trade.sell(0.01, [tokenAddr, WETH], symbol, { simulate: isTop, dryRun: true });
           }
         }
         logTrade('SELL', symbol, 0.01, price, reason, pnl);
