@@ -47,6 +47,7 @@ async function validateToken(token, ethPrice) {
     console.warn(`\u274c Missing address for ${token.symbol.toUpperCase()}`);
     return null;
   }
+
   let checksummed;
   try {
     checksummed = getAddress(address);
@@ -55,30 +56,9 @@ async function validateToken(token, ethPrice) {
     return null;
   }
 
-  const pairAddr = await factory.getPair(TOKENS.WETH, checksummed);
-  if (pairAddr === ethers.ZeroAddress) {
-    console.warn(`\u274c No Uniswap V2 pair for ${token.symbol.toUpperCase()}`);
-    return null;
-  }
-
-  const pair = new ethers.Contract(pairAddr, pairAbi, provider);
-  let reserves;
-  try {
-    reserves = await pair.getReserves();
-  } catch {
-    console.warn(`\u274c Cannot read reserves for ${token.symbol.toUpperCase()}`);
-    return null;
-  }
-  const token0 = await pair.token0();
-  const wethReserve = token0.toLowerCase() === TOKENS.WETH.toLowerCase() ? reserves[0] : reserves[1];
-  const wethAmt = Number(ethers.formatEther(wethReserve));
-  if (wethAmt * ethPrice < 50) {
-    console.log(`[LIQUIDITY] Skipped ${token.symbol.toUpperCase()}: liquidity < $50`);
-    return null;
-  }
-
+  // \u2705 Skip Uniswap V2 pair check on Arbitrum (V2 not used here)
   TOKENS[token.symbol.toUpperCase()] = checksummed;
-  console.log(`\u2705 Added ${token.symbol.toUpperCase()}`);
+  console.log(`\u2705 Validated ${token.symbol.toUpperCase()}`);
   return token.symbol.toUpperCase();
 }
 
