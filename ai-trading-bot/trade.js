@@ -197,29 +197,29 @@ async function validateLiquidity(tokenA, tokenB, symbol) {
 
 async function buy(amountEth, path, token, opts = {}) {
   if (token && ['ETH', 'WETH'].includes(token.toUpperCase())) {
-    return null;
+    return { success: false, reason: 'invalid-token' };
   }
   console.log(`\uD83D\uDD25 Buy ${token} at ${new Date().toISOString()}`);
-  if (!await gasOkay()) return null;
+  if (!await gasOkay()) return { success: false, reason: 'gas' };
   const ethPrice = await getEthPrice();
   if (ethPrice && amountEth * ethPrice < MIN_TRADE_USD) {
     console.log(`[TRADE] Skipped ${token}: trade amount below $${MIN_TRADE_USD}`);
-    return null;
+    return { success: false, reason: 'amount' };
   }
   const tokenAddr = TOKENS[token.toUpperCase()];
   if (!tokenAddr) {
     console.log("Token address is null, skipping trade.");
-    return null;
+    return { success: false, reason: 'no-address' };
   }
   const swapPath = [WETH_ADDRESS, tokenAddr];
   const wethBal = await getTokenBalance(WETH_ADDRESS, walletAddress, 'WETH');
   if (amountEth > wethBal) {
     console.log(`\u274c Not enough WETH for ${token}`);
-    return null;
+    return { success: false, reason: 'balance' };
   }
   if (!await validateLiquidity(WETH_ADDRESS, tokenAddr, token)) {
     appendLog({ time: new Date().toISOString(), action: 'SKIP', token, reason: 'liquidity' });
-    return null;
+    return { success: false, reason: 'liquidity' };
   }
   await ensureAllowance(WETH_ADDRESS, 'WETH', parseAmount(amountEth, 'WETH'));
   try {
@@ -232,7 +232,7 @@ async function buy(amountEth, path, token, opts = {}) {
     if (!amounts || !amounts[1] || amounts[1] === 0n) {
       console.log(`\u274c Not enough liquidity for ${token}`);
       appendLog({ time: new Date().toISOString(), action: 'SKIP', token, reason: 'liquidity' });
-      return null;
+      return { success: false, reason: 'liquidity' };
     }
     if (opts.simulate || opts.dryRun || DRY_RUN) {
       await withRetry(() =>
@@ -244,11 +244,12 @@ async function buy(amountEth, path, token, opts = {}) {
           Math.floor(Date.now() / 1000) + 60 * 10
         )
       );
+      return { success: true, simulated: true };
     }
   } catch (err) {
     console.log(`\u274c Unable to get quote for ${token}: ${err.message}`);
     appendLog({ time: new Date().toISOString(), action: 'SKIP', token, reason: 'liquidity' });
-    return null;
+    return { success: false, reason: 'liquidity' };
   }
   try {
     const amt = Number(amountEth).toFixed(6);
@@ -264,7 +265,7 @@ async function buy(amountEth, path, token, opts = {}) {
     if (opts.dryRun || DRY_RUN) {
       console.log('\u267B Dry run - transaction not sent');
       appendLog({ time: new Date().toISOString(), action: 'DRY-BUY', token, amountEth: amt });
-      return null;
+      return { success: true, simulated: true };
     }
     const tx = await withRetry(() =>
       router.swapExactTokensForTokens(
@@ -277,34 +278,34 @@ async function buy(amountEth, path, token, opts = {}) {
     );
     const receipt = await tx.wait();
     appendLog({ time: new Date().toISOString(), action: 'BUY', token, amountEth: amt, tx: tx.hash });
-    return receipt;
+    return { success: true, tx: tx.hash };
   } catch (err) {
     const hash = err.transactionHash || (err.transaction && err.transaction.hash);
     logError(`Failed to trade WETH \u2192 ${token} | ${err.message} ${hash ? '| tx ' + hash : ''}`);
-    throw err;
+    return { success: false, reason: err.message };
   }
 }
 
 async function sell(amountToken, path, token, opts = {}) {
   if (token && ['ETH', 'WETH'].includes(token.toUpperCase())) {
-    return null;
+    return { success: false, reason: 'invalid-token' };
   }
   console.log(`\uD83D\uDD25 Sell ${token} at ${new Date().toISOString()}`);
-  if (!await gasOkay()) return null;
+  if (!await gasOkay()) return { success: false, reason: 'gas' };
   const tokenAddr = TOKENS[token.toUpperCase()];
   if (!tokenAddr) {
     console.log("Token address is null, skipping trade.");
-    return null;
+    return { success: false, reason: 'no-address' };
   }
   const swapPath = [tokenAddr, WETH_ADDRESS];
   const bal = await getTokenBalance(tokenAddr, walletAddress, token);
   if (amountToken > bal) {
     console.log(`\u274c Not enough ${token} to sell`);
-    return null;
+    return { success: false, reason: 'balance' };
   }
   if (!await validateLiquidity(tokenAddr, WETH_ADDRESS, token)) {
     appendLog({ time: new Date().toISOString(), action: 'SKIP', token, reason: 'liquidity' });
-    return null;
+    return { success: false, reason: 'liquidity' };
   }
   await ensureAllowance(tokenAddr, token, parseAmount(amountToken, token));
   try {
@@ -317,13 +318,13 @@ async function sell(amountToken, path, token, opts = {}) {
     if (!amounts || !amounts[1] || amounts[1] === 0n) {
       console.log(`\u274c Not enough liquidity for ${token}`);
       appendLog({ time: new Date().toISOString(), action: 'SKIP', token, reason: 'liquidity' });
-      return null;
+      return { success: false, reason: 'liquidity' };
     }
     const ethPrice = await getEthPrice();
     const wethOut = Number(ethers.formatEther(amounts[1]));
     if (ethPrice && wethOut * ethPrice < MIN_TRADE_USD) {
       console.log(`[TRADE] Skipped ${token}: trade amount below $${MIN_TRADE_USD}`);
-      return null;
+      return { success: false, reason: 'amount' };
     }
     if (opts.simulate || opts.dryRun || DRY_RUN) {
       await withRetry(() =>
@@ -335,11 +336,12 @@ async function sell(amountToken, path, token, opts = {}) {
           Math.floor(Date.now() / 1000) + 60 * 10
         )
       );
+      return { success: true, simulated: true };
     }
   } catch (err) {
     console.log(`\u274c Unable to get quote for ${token}: ${err.message}`);
     appendLog({ time: new Date().toISOString(), action: 'SKIP', token, reason: 'liquidity' });
-    return null;
+    return { success: false, reason: 'liquidity' };
   }
   try {
     const amt = Number(amountToken).toFixed(6);
@@ -355,7 +357,7 @@ async function sell(amountToken, path, token, opts = {}) {
     if (opts.dryRun || DRY_RUN) {
       console.log('\u267B Dry run - transaction not sent');
       appendLog({ time: new Date().toISOString(), action: 'DRY-SELL', token, amountToken: amt });
-      return null;
+      return { success: true, simulated: true };
     }
     const tx = await withRetry(() =>
       router.swapExactTokensForTokens(
@@ -368,11 +370,11 @@ async function sell(amountToken, path, token, opts = {}) {
     );
     const receipt = await tx.wait();
     appendLog({ time: new Date().toISOString(), action: 'SELL', token, amountToken: amt, tx: tx.hash });
-    return receipt;
+    return { success: true, tx: tx.hash };
   } catch (err) {
     const hash = err.transactionHash || (err.transaction && err.transaction.hash);
     logError(`Failed to trade ${token} \u2192 WETH | ${err.message} ${hash ? '| tx ' + hash : ''}`);
-    throw err;
+    return { success: false, reason: err.message };
   }
 }
 

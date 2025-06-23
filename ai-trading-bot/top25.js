@@ -133,4 +133,8 @@ async function getValidTokens() {
   }
 }
 
-module.exports = { getValidTokens };
+function getTop25TradableTokens() {
+  return getValidTokens();
+}
+
+module.exports = { getValidTokens, getTop25TradableTokens };

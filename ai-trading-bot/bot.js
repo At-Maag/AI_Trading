@@ -8,7 +8,7 @@ const path = require('path');
 const { ethers, getAddress } = require('ethers');
 const config = require('./config');
 const TOKENS = require('./tokens');
-const { getValidTokens } = require('./top25');
+const { getValidTokens, getTop25TradableTokens } = require('./top25');
 
 const MIN_TRADE_USD = 10;
 console.debug = () => {};
@@ -28,7 +28,7 @@ const activePositions = new Set();
 const lastScores = {};
 
 async function refreshTokenList(initial = false) {
-  const tokens = await getValidTokens();
+  const tokens = await getTop25TradableTokens();
   if (!tokens || !tokens.length) return;
 
   if (initial || !validTokens.length) {
@@ -90,8 +90,12 @@ const history = {};
 let paper = process.env.PAPER === 'true';
 const DRY_RUN = process.env.DRY_RUN === 'true';
 let activeTrades = {};
+const failureCounts = {};
+const disabledTokens = new Set();
 
 let fullScanCount = 0;
+let startWeth = 0;
+let lastWethBal = 0;
 
 const logFile = path.join(__dirname, '..', 'data', 'trade-log.json');
 const tradeLogTxt = path.join(__dirname, '..', 'logs', 'trade-log.txt');
@@ -123,6 +127,17 @@ function logTrade(side, token, amount, price, reason, pnlPct) {
   if (reason) line += ` (${reason})`;
   if (typeof pnlPct === 'number') line += ` PnL ${pnlPct.toFixed(2)}%`;
   fs.appendFileSync(tradeLogTxt, line + '\n');
+}
+
+function recordFailure(symbol, reason) {
+  if (!reason) return;
+  if (/liquidity/i.test(reason) || /TRANSFER_FROM_FAILED/i.test(reason)) {
+    failureCounts[symbol] = (failureCounts[symbol] || 0) + 1;
+    if (failureCounts[symbol] >= 3) {
+      disabledTokens.add(symbol);
+      console.log(`[DISABLED] ${symbol} due to repeated failures`);
+    }
+  }
 }
 
 let lastGroupBCheck = 0;
@@ -159,12 +174,16 @@ function formatTable(rows, headers = []) {
 }
 
 
-function renderSummary(list) {
+function renderSummary(list, wethBal = 0, ethPrice = 0) {
   const top = list.slice(0, 5);
   const ts = new Date().toISOString().replace('T', ' ').slice(0, 19);
   fullScanCount++;
+  const coins = [...new Set([...config.coins, ...activePositions])];
+  const pnlUsd = (wethBal - startWeth) * (ethPrice || 0);
+  const pnlPct = startWeth ? (pnlUsd / (startWeth * (ethPrice || 0))) * 100 : 0;
+  const pnlColored = color(`$${pnlUsd.toFixed(2)} (${pnlPct.toFixed(2)}%)`, pnlUsd >= 0 ? 'green' : 'red');
   if (config.prettyLogs) {
-    console.log(`[${ts}] [Scan ${fullScanCount}/14] ${color('=== 🔍 TOP 5 COINS (Highest Scores) ===', 'magenta')}`);
+    console.log(`[${ts}] [Scan ${fullScanCount}/14] ${color('=== 🔮 TOP 5 COINS ===', 'magenta')}  [${coins.length - 1} Tokens] [WETH $${wethBal.toFixed(2)} | PnL: ${pnlColored}]`);
     const rows = top.map(r => [
       r.symbol,
       `$${r.price.toFixed(2)}`,
@@ -182,7 +201,7 @@ function renderSummary(list) {
 }
 
 
-async function evaluate(prices) {
+async function evaluate(prices, wethBal, ethPrice) {
   const res = [];
   const coins = [...new Set([...config.coins, ...activePositions])];
   const totalScans = coins.length;
@@ -203,13 +222,17 @@ async function evaluate(prices) {
   res.sort((a, b) => b.score - a.score);
   groupA = res.slice(0, 5).map(r => r.symbol);
   groupB = res.slice(5).map(r => r.symbol);
-  renderSummary(res);
+  renderSummary(res, wethBal, ethPrice);
   return res;
 }
 
 async function checkTrades(entries, ethPrice, isTop) {
   for (const { symbol, price, closing, score, signals } of entries) {
     if (['ETH', 'WETH'].includes(symbol)) {
+      continue;
+    }
+
+    if (disabledTokens.has(symbol)) {
       continue;
     }
 
@@ -236,19 +259,24 @@ async function checkTrades(entries, ethPrice, isTop) {
           console.log("Token address is null, skipping trade.");
           continue;
         }
+        let res;
         if (!paper) {
           try {
-            await trade.buy(amountEth, [WETH, tokenAddr], symbol, { simulate: isTop, dryRun: DRY_RUN });
+            res = await trade.buy(amountEth, [WETH, tokenAddr], symbol, { simulate: isTop, dryRun: DRY_RUN });
+            if (!res.success) recordFailure(symbol, res.reason);
           } catch (err) {
             logError(`Failed to trade ETH \u2192 ${symbol} | ${err.message}`);
+            recordFailure(symbol, err.message);
           }
         } else {
-          await trade.buy(amountEth, [WETH, tokenAddr], symbol, { simulate: isTop, dryRun: true });
+          res = await trade.buy(amountEth, [WETH, tokenAddr], symbol, { simulate: isTop, dryRun: true });
         }
-        risk.updateEntry(symbol, price);
-        activeTrades[symbol] = true;
-        activePositions.add(symbol);
-        logTrade('BUY', symbol, amountEth, price, 'signal');
+        if (res && res.success) {
+          risk.updateEntry(symbol, price);
+          activeTrades[symbol] = true;
+          activePositions.add(symbol);
+          logTrade('BUY', symbol, amountEth, price, 'signal');
+        }
       }
     } else {
       const hitStop = risk.stopLoss(symbol, price);
@@ -258,26 +286,31 @@ async function checkTrades(entries, ethPrice, isTop) {
         const reason = sellSignal ? 'signal' : hitStop ? 'stopLoss' : 'takeProfit';
         const entry = risk.getEntry(symbol) || price;
         const pnl = ((price - entry) / entry) * 100;
+        let res;
         if (!paper) {
           try {
             const tokenAddr = TOKENS[symbol.toUpperCase()];
             if (!tokenAddr) {
               console.log("Token address is null, skipping trade.");
             } else {
-              await trade.sell(0.01, [tokenAddr, WETH], symbol, { simulate: isTop, dryRun: DRY_RUN });
+              res = await trade.sell(0.01, [tokenAddr, WETH], symbol, { simulate: isTop, dryRun: DRY_RUN });
+              if (!res.success) recordFailure(symbol, res.reason);
             }
           } catch (err) {
             logError(`Failed to trade ${symbol} \u2192 ETH | ${err.message}`);
+            recordFailure(symbol, err.message);
           }
         } else {
           const tokenAddr = TOKENS[symbol.toUpperCase()];
           if (tokenAddr) {
-            await trade.sell(0.01, [tokenAddr, WETH], symbol, { simulate: isTop, dryRun: true });
+            res = await trade.sell(0.01, [tokenAddr, WETH], symbol, { simulate: isTop, dryRun: true });
           }
         }
-        logTrade('SELL', symbol, 0.01, price, reason, pnl);
-        activeTrades[symbol] = false;
-        activePositions.delete(symbol);
+        if (res && res.success) {
+          logTrade('SELL', symbol, 0.01, price, reason, pnl);
+          activeTrades[symbol] = false;
+          activePositions.delete(symbol);
+        }
       }
     }
   }
@@ -287,7 +320,9 @@ async function loop() {
   try {
     const prices = await getPrices();
     if (!prices) return;
-    const evaluations = await evaluate(prices);
+    lastWethBal = await trade.getWethBalance();
+    if (!startWeth) startWeth = lastWethBal;
+    const evaluations = await evaluate(prices, lastWethBal, prices.eth);
     const ethPrice = prices.eth;
     await checkTrades(evaluations.filter(e => groupA.includes(e.symbol)), ethPrice, true);
     const now = Date.now();
