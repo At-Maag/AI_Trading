@@ -4,8 +4,8 @@ const { getAddress } = require('ethers');
 const TOKENS = require('./tokens');
 require('dotenv').config();
 
-// Provider for on-chain lookups
-const provider = new ethers.InfuraProvider('mainnet', process.env.INFURA_API_KEY);
+// Provider for on-chain lookups on Arbitrum
+const provider = new ethers.JsonRpcProvider('https://arb1.arbitrum.io/rpc');
 
 const factoryAbi = [
   'function getPair(address tokenA, address tokenB) external view returns (address pair)'

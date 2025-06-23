@@ -56,11 +56,9 @@ async function getTokenUsdPrice(symbol) {
   }
 }
 
+// Minimal ABI for Uniswap V3 router
 const routerAbi = [
-  'function swapExactETHForTokens(uint amountOutMin, address[] calldata path, address to, uint deadline) payable returns (uint[] memory amounts)',
-  'function swapExactTokensForETH(uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline) returns (uint[] memory amounts)',
-  'function swapExactTokensForTokens(uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline) returns (uint[] memory amounts)',
-  'function getAmountsOut(uint amountIn, address[] calldata path) external view returns (uint[] memory amounts)'
+  'function exactInputSingle((address tokenIn,address tokenOut,uint24 fee,address recipient,uint256 amountIn,uint256 amountOutMinimum,uint160 sqrtPriceLimitX96)) payable returns (uint256 amountOut)'
 ];
 
 const erc20Abi = [
@@ -79,7 +77,8 @@ const pairAbi = [
   'function token1() external view returns (address)'
 ];
 
-const provider = new ethers.InfuraProvider('mainnet', process.env.INFURA_API_KEY);
+// Connect to Arbitrum
+const provider = new ethers.JsonRpcProvider('https://arb1.arbitrum.io/rpc');
 const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
 const walletAddress = getAddress(wallet.address);
 
@@ -98,9 +97,9 @@ async function withRetry(fn, retries = 3, delay = 1000) {
     }
   }
 }
-// Uniswap V2 Router
+// Uniswap V3 Universal Router on Arbitrum
 const router = new ethers.Contract(
-  getAddress('0x7a250d5630b4cf539739df2c5dacb4c659f2488d'),
+  getAddress('0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45'),
   routerAbi,
   wallet
 );
@@ -140,6 +139,13 @@ async function getTokenBalance(tokenAddr, account, symbol) {
   }
 }
 
+// Convenience wrapper using token symbol
+async function getBalance(symbol, account = walletAddress) {
+  const addr = TOKENS[symbol.toUpperCase()];
+  if (!addr) return 0;
+  return getTokenBalance(addr, account, symbol);
+}
+
 async function ensureAllowance(tokenAddr, symbol, amount) {
   try {
     const contract = new ethers.Contract(tokenAddr, erc20Abi, wallet);
@@ -153,6 +159,27 @@ async function ensureAllowance(tokenAddr, symbol, amount) {
     logError(`Approval failed for ${symbol} | ${err.message}`);
     throw err;
   }
+}
+
+async function swapExactTokenForToken({ inputToken, outputToken, amountIn, slippage }) {
+  const inAddr = TOKENS[inputToken.toUpperCase()];
+  let outAddr = TOKENS[outputToken.toUpperCase()];
+  if (outputToken === 'ETH') outAddr = WETH_ADDRESS;
+  if (!inAddr || !outAddr) throw new Error('Invalid token symbol');
+  const amountParsed = parseAmount(amountIn, inputToken);
+  await ensureAllowance(inAddr, inputToken, amountParsed);
+
+  const params = {
+    tokenIn: inAddr,
+    tokenOut: outAddr,
+    fee: 3000,
+    recipient: walletAddress,
+    deadline: Math.floor(Date.now() / 1000) + 60 * 10,
+    amountIn: amountParsed,
+    amountOutMinimum: 0,
+    sqrtPriceLimitX96: 0
+  };
+  return router.exactInputSingle(params);
 }
 
 const errorLogPath = path.join(__dirname, '..', 'logs', 'error-log.txt');
@@ -268,13 +295,17 @@ async function buy(token, opts = {}) {
 
   console.log(`🕒 [${localTime()}] 🟢 Swapping WETH for ${token}...`);
   const before = await getTokenBalance(tokenAddr, walletAddress, token);
-  const tx = await router.swapExactTokensForTokens(
-    amountParsed,
-    0,
-    [WETH_ADDRESS, tokenAddr],
-    walletAddress,
-    Math.floor(Date.now() / 1000) + 60 * 10
-  );
+  const params = {
+    tokenIn: WETH_ADDRESS,
+    tokenOut: tokenAddr,
+    fee: 3000,
+    recipient: walletAddress,
+    amountIn: amountParsed,
+    amountOutMinimum: 0,
+    sqrtPriceLimitX96: 0,
+    deadline: Math.floor(Date.now() / 1000) + 60 * 10
+  };
+  const tx = await router.exactInputSingle(params);
   const receipt = await tx.wait();
   console.log(`🕒 [${localTime()}] ✅ TX confirmed: ${tx.hash}`);
 
@@ -399,8 +430,54 @@ async function sell(amountToken, path, token, opts = {}) {
   }
 }
 
+// Simplified sell logic using the universal router
+async function sellToken(token) {
+  const balance = await getBalance(token);
+
+  if (!balance || balance === 0) {
+    console.log(`\u2718 No ${token} balance to sell`);
+    return { success: false, reason: 'no_balance' };
+  }
+
+  const tokenPrice = await getTokenUsdPrice(token);
+  const tradeValueUsd = balance * (tokenPrice || 0);
+
+  if (tradeValueUsd < 10) {
+    console.log(`[SKIP] ${token} sell value is $${tradeValueUsd.toFixed(2)}, below $10 threshold`);
+    return { success: false, reason: 'too_small' };
+  }
+
+  const ethBalance = parseFloat(ethers.formatEther(await provider.getBalance(wallet.address)));
+  const GAS_THRESHOLD = 0.005;
+  const receiveToken = ethBalance < GAS_THRESHOLD ? 'ETH' : 'WETH';
+
+  console.log(`\u2022 Selling ${token} \u2192 ${receiveToken}`);
+  console.log(`\u2022 Token Balance: ${balance}`);
+  console.log(`\u2022 Token Price: $${tokenPrice}`);
+  console.log(`\u2022 Est. Value: $${tradeValueUsd.toFixed(2)}`);
+  console.log(`\u2022 ETH for Gas: ${ethBalance} ETH`);
+
+  try {
+    const tx = await swapExactTokenForToken({
+      inputToken: token,
+      outputToken: receiveToken,
+      amountIn: balance,
+      slippage: 0.005
+    });
+    if (tx) {
+      console.log(`\u2713 Swap TX sent: ${tx.hash}`);
+      return { success: true, tx };
+    }
+  } catch (err) {
+    console.log(`\u2718 Swap failed`);
+    return { success: false, reason: 'swap_failed' };
+  }
+  console.log(`\u2718 Swap failed`);
+  return { success: false, reason: 'swap_failed' };
+}
+
 async function getWethBalance() {
   return getTokenBalance(WETH_ADDRESS, walletAddress, 'WETH');
 }
 
-module.exports = { buy, sell, getWethBalance };
+module.exports = { buy, sellToken, getWethBalance };
