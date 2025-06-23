@@ -158,6 +158,13 @@ function color(text, c) {
   return COLORS[c] + text + COLORS.reset;
 }
 
+function formatUsd(value) {
+  return '$' + Number(value).toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
+}
+
 function formatTable(rows, headers = []) {
   const widths = headers.map((h, i) => Math.max(h.length, ...rows.map(r => r[i].length)));
   const line = (left, fill, mid, right) => left + widths.map(w => fill.repeat(w + 2)).join(mid) + right;
@@ -181,9 +188,11 @@ function renderSummary(list, wethBal = 0, ethPrice = 0) {
   const coins = [...new Set([...config.coins, ...activePositions])];
   const pnlUsd = (wethBal - startWeth) * (ethPrice || 0);
   const pnlPct = startWeth ? (pnlUsd / (startWeth * (ethPrice || 0))) * 100 : 0;
-  const pnlColored = color(`$${pnlUsd.toFixed(2)} (${pnlPct.toFixed(2)}%)`, pnlUsd >= 0 ? 'green' : 'red');
+  const pnlColored = color(`${formatUsd(pnlUsd)} (${pnlPct.toFixed(2)}%)`, pnlUsd >= 0 ? 'green' : 'red');
+  const wethValue = wethBal * (ethPrice || 0);
+  process.stdout.write('\x1Bc');
   if (config.prettyLogs) {
-    console.log(`[${ts}] [Scan ${fullScanCount}/14] ${color('=== 🔮 TOP 5 COINS ===', 'magenta')}  [${coins.length - 1} Tokens] [WETH $${wethBal.toFixed(2)} | PnL: ${pnlColored}]`);
+    console.log(`[${ts}] [Scan ${fullScanCount}/14] ${color('=== ♦ TOP 5 COINS ===', 'magenta')}  [${coins.length - 1} Tokens] [WETH ${wethBal.toFixed(2)} (${formatUsd(wethValue)}) | PnL: ${pnlColored}]`);
     const rows = top.map(r => [
       r.symbol,
       `$${r.price.toFixed(2)}`,
