@@ -35,7 +35,9 @@ const routerAbi = [
 ];
 
 const erc20Abi = [
-  'function balanceOf(address) view returns (uint256)'
+  'function balanceOf(address) view returns (uint256)',
+  'function allowance(address owner, address spender) view returns (uint256)',
+  'function approve(address spender, uint256 amount) returns (bool)'
 ];
 
 const factoryAbi = [
@@ -105,6 +107,21 @@ async function getTokenBalance(tokenAddr, account, symbol) {
     return Number(ethers.formatUnits(bal, getDecimals(symbol)));
   } catch {
     return 0;
+  }
+}
+
+async function ensureAllowance(tokenAddr, symbol, amount) {
+  try {
+    const contract = new ethers.Contract(tokenAddr, erc20Abi, wallet);
+    const current = await withRetry(() => contract.allowance(walletAddress, router.target));
+    if (current < amount) {
+      console.log(`[APPROVE] ${symbol}`);
+      const tx = await withRetry(() => contract.approve(router.target, ethers.MaxUint256));
+      await tx.wait();
+    }
+  } catch (err) {
+    logError(`Approval failed for ${symbol} | ${err.message}`);
+    throw err;
   }
 }
 
@@ -204,6 +221,7 @@ async function buy(amountEth, path, token, opts = {}) {
     appendLog({ time: new Date().toISOString(), action: 'SKIP', token, reason: 'liquidity' });
     return null;
   }
+  await ensureAllowance(WETH_ADDRESS, 'WETH', parseAmount(amountEth, 'WETH'));
   try {
     const amounts = await withRetry(() =>
       router.getAmountsOut(
@@ -288,6 +306,7 @@ async function sell(amountToken, path, token, opts = {}) {
     appendLog({ time: new Date().toISOString(), action: 'SKIP', token, reason: 'liquidity' });
     return null;
   }
+  await ensureAllowance(tokenAddr, token, parseAmount(amountToken, token));
   try {
     const amounts = await withRetry(() =>
       router.getAmountsOut(
