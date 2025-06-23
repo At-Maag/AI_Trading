@@ -1,5 +1,4 @@
-const { ethers } = require('ethers');
-const { getAddress } = require('ethers/lib/utils');
+const { ethers, getAddress } = require('ethers');
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
