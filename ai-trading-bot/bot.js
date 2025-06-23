@@ -29,7 +29,8 @@ const routerAbi = [
   'function getAmountsOut(uint amountIn, address[] memory path) view returns (uint[] memory amounts)'
 ];
 
-const provider = new ethers.InfuraProvider('mainnet', process.env.INFURA_API_KEY);
+// Connect to Arbitrum
+const provider = new ethers.JsonRpcProvider('https://arb1.arbitrum.io/rpc');
 const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
 const walletAddress = getAddress(wallet.address);
 
@@ -321,7 +322,7 @@ async function checkTrades(entries, ethPrice, isTop) {
             if (!tokenAddr) {
               console.log("Token address is null, skipping trade.");
             } else {
-              res = await trade.sell(0.01, [tokenAddr, WETH], symbol, { simulate: isTop, dryRun: DRY_RUN });
+              res = await trade.sellToken(symbol);
               if (!res.success) recordFailure(symbol, res.reason);
             }
           } catch (err) {
@@ -331,7 +332,7 @@ async function checkTrades(entries, ethPrice, isTop) {
         } else {
           const tokenAddr = TOKENS[symbol.toUpperCase()];
           if (tokenAddr) {
-            res = await trade.sell(0.01, [tokenAddr, WETH], symbol, { simulate: isTop, dryRun: true });
+            res = await trade.sellToken(symbol);
           }
         }
         if (res && res.success) {

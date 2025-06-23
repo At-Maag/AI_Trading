@@ -21,7 +21,8 @@ const TOKENS = {
   // Ensure the WETH address is using the proper checksum. A mixed-case
   // address without a valid checksum triggers ethers.getAddress() to
   // throw an INVALID_ARGUMENT error at startup.
-  WETH: safeGetAddress('0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2', 'WETH'),
+  // Arbitrum WETH address
+  WETH: safeGetAddress('0x82af49447d8a07e3bd95bd0d56f35241523fbab1', 'WETH'),
   LINK: safeGetAddress('0x514910771af9ca656af840dff83e8264ecf986ca', 'LINK'),
   UNI: safeGetAddress('0x1f9840a85d5af5bf1d1762f925bdaddc4201f984', 'UNI'),
   ARB: safeGetAddress('0x912ce59144191c1204e64559fe8253a0e49e6548', 'ARB'),
