@@ -3,8 +3,8 @@ module.exports = {
   // Start with a minimal list. Additional tokens are loaded dynamically
   // from the CoinGecko API at runtime via top25.js
   coins: [
-    'ETH',  // Ethereum
-    'WETH'  // Wrapped Ether
+    // Use WETH exclusively as the base asset
+    'WETH'
   ],
   RSI_PERIOD: 14,
   MACD_FAST: 12,

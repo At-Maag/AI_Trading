@@ -74,8 +74,8 @@ async function validateToken(token, ethPrice) {
   const token0 = await pair.token0();
   const wethReserve = token0.toLowerCase() === TOKENS.WETH.toLowerCase() ? reserves[0] : reserves[1];
   const wethAmt = Number(ethers.formatEther(wethReserve));
-  if (wethAmt * ethPrice < 500) {
-    console.warn(`\u274c Liquidity <$500 for ${token.symbol.toUpperCase()}`);
+  if (wethAmt * ethPrice < 50) {
+    console.log(`[LIQUIDITY] Skipped ${token.symbol.toUpperCase()}: liquidity < $50`);
     return null;
   }
 

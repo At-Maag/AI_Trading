@@ -29,7 +29,7 @@ async function refreshTokenList() {
   const tokens = await getValidTokens();
   if (tokens && tokens.length) {
     validTokens = tokens;
-    config.coins = ['ETH', 'WETH', ...validTokens];
+    config.coins = ['WETH', ...validTokens];
     console.log(`[TOKENS] Loaded ${validTokens.length} tradable tokens`);
   }
 }
@@ -188,7 +188,7 @@ async function checkTrades(entries, ethPrice, isTop) {
 
     if (!activeTrades[symbol]) {
       if (strategy.shouldBuy(symbol, closing)) {
-        const balance = await trade.getEthBalance();
+        const balance = await trade.getWethBalance();
         const feeData = await withRetry(() => provider.getFeeData());
         const gasPrice = feeData.gasPrice || ethers.parseUnits('0', 'gwei');
         const gasCost = Number(ethers.formatEther(gasPrice * 210000n));
@@ -196,7 +196,7 @@ async function checkTrades(entries, ethPrice, isTop) {
 
         const amountEth = risk.calculatePositionSize(score, available, ethPrice || 3500);
         if (amountEth <= 0) {
-          console.log(`[SKIP] Trade amount below $${MIN_TRADE_USD} for ${symbol}`);
+          console.log(`[TRADE] Skipped ${symbol}: trade amount below $${MIN_TRADE_USD}`);
           continue;
         }
 
