@@ -7,6 +7,7 @@ const TOKENS = require('./tokens');
 require('dotenv').config();
 const DRY_RUN = process.env.DRY_RUN === 'true';
 const MIN_TRADE_USD = 10;
+const MIN_RECEIVE_TOKENS = 0.001;
 
 function localTime() {
   return new Date().toLocaleTimeString('en-US', {
@@ -234,6 +235,7 @@ async function buy(amountEth, path, token, opts = {}) {
   }
   await ensureAllowance(WETH_ADDRESS, 'WETH', parseAmount(amountEth, 'WETH'));
   let minOut;
+  let expectedOut;
   try {
     const amounts = await withRetry(() =>
       router.getAmountsOut(
@@ -246,6 +248,7 @@ async function buy(amountEth, path, token, opts = {}) {
       appendLog({ time: new Date().toISOString(), action: 'SKIP', token, reason: 'liquidity' });
       return { success: false, reason: 'liquidity' };
     }
+    expectedOut = amounts[1];
     minOut = amounts[1] * (10000n - SLIPPAGE_BPS) / 10000n;
     if (opts.simulate || opts.dryRun || DRY_RUN) {
       await withRetry(() =>
@@ -293,13 +296,24 @@ async function buy(amountEth, path, token, opts = {}) {
     const receipt = await tx.wait();
     const afterBal = await getTokenBalance(tokenAddr, walletAddress, token);
     const diff = afterBal - beforeBal;
-    if (diff > 0) {
-      console.log(`✅ Bought ${diff.toFixed(2)} ${token} | TX: ${tx.hash}`);
+    let message;
+    let success = true;
+    const ethPrice = await getEthPrice();
+    let tokenValueUsd = 0;
+    try {
+      const expectedTokens = Number(ethers.formatUnits(expectedOut || 0n, getDecimals(token)));
+      const pricePerToken = expectedTokens ? (Number(amountEth) * (ethPrice || 0)) / expectedTokens : 0;
+      tokenValueUsd = diff * pricePerToken;
+    } catch {}
+    if (diff <= 0 || (diff < MIN_RECEIVE_TOKENS && tokenValueUsd < 1)) {
+      success = false;
+      message = `❌ Buy failed or too small`;
     } else {
-      console.log(`❌ Buy failed – no ${token} received`);
+      message = `✅ Bought ${diff.toFixed(2)} ${token} | TX: ${tx.hash}`;
     }
+    console.log(message);
     appendLog({ time: new Date().toISOString(), action: 'BUY', token, amountEth: amt, tx: tx.hash });
-    return { success: true, tx: tx.hash };
+    return { success, tx: tx.hash };
   } catch (err) {
     const hash = err.transactionHash || (err.transaction && err.transaction.hash);
     logError(`Failed to trade WETH \u2192 ${token} | ${err.message} ${hash ? '|tx ' + hash : ''}`);

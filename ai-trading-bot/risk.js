@@ -30,8 +30,7 @@ function takeProfit(symbol, price) {
 
 function calculatePositionSize(score, ethBalance, ethPrice) {
   ethPrice = ethPrice || 3500;
-  const s = Math.max(1, Math.min(score, 3));
-  const allocation = 0.15 * (s / 3); // cap at 15% of wallet
+  const allocation = config.TRADE_ALLOCATION || 0.15;
   const amountEth = ethBalance * allocation;
   if (amountEth * ethPrice < 10 || amountEth <= 0) return 0;
   return amountEth;
