@@ -23,13 +23,6 @@ const factory = new ethers.Contract(factoryAddress, factoryAbi, provider);
 let cachedTokens = [];
 let lastFetched = 0;
 
-async function fetchTopTokens() {
-  const url =
-    'https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=25&platform=ethereum';
-  const { data } = await axios.get(url, { timeout: 10000 });
-  return data;
-}
-
 async function fetchEthPrice() {
   const { data } = await axios.get(
     'https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd',
@@ -96,29 +89,16 @@ async function getValidTokens() {
     return [...cachedTokens];
   }
   try {
-    console.log('\uD83D\uDD04 Fetching tokens from CoinGecko...');
-    const [tokens, ethPrice] = await Promise.all([fetchTopTokens(), fetchEthPrice()]);
+    console.log('\uD83D\uDD04 Validating static token list...');
+    const ethPrice = await fetchEthPrice();
+    const tokenSymbols = Object.keys(TOKENS).filter(s => s !== 'WETH');
     const valid = [];
-    for (const t of tokens) {
-      const res = await validateToken(t, ethPrice);
+    for (const symbol of tokenSymbols) {
+      const res = await validateToken({ symbol }, ethPrice);
       if (res && !valid.includes(res)) {
         valid.push(res);
       }
-    }
-
-    // If fewer than 25 tokens were found, supplement from the
-    // statically configured list in tokens.js. This ensures the bot
-    // always has a broad set of assets even when the CoinGecko API
-    // does not return enough tradable tokens.
-    if (valid.length < 25) {
-      for (const symbol of Object.keys(TOKENS)) {
-        if (symbol === 'WETH' || valid.includes(symbol)) continue;
-        const res = await validateToken({ symbol }, ethPrice);
-        if (res && !valid.includes(res)) {
-          valid.push(res);
-        }
-        if (valid.length >= 25) break;
-      }
+      if (valid.length >= 25) break;
     }
 
     if (valid.length) {
@@ -126,9 +106,9 @@ async function getValidTokens() {
       lastFetched = Date.now();
     }
     console.log(`\u2705 ${valid.length} tokens validated`);
-    return valid.length ? [...valid] : [...cachedTokens];
+    return [...cachedTokens];
   } catch (err) {
-    console.error(`\u274c Token fetch failed: ${err.message}`);
+    console.error(`\u274c Token validation failed: ${err.message}`);
     return [...cachedTokens];
   }
 }
