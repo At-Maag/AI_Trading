@@ -1,9 +1,31 @@
 const { ethers } = require('ethers');
+const { getAddress } = require('ethers/lib/utils');
+const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 const config = require('./config');
 const TOKENS = require('./tokens');
 require('dotenv').config();
+const DRY_RUN = process.env.DRY_RUN === 'true';
+
+let cachedEthPrice = null;
+let lastEthFetch = 0;
+
+async function getEthPrice() {
+  const now = Date.now();
+  if (cachedEthPrice && now - lastEthFetch < 5 * 60 * 1000) {
+    return cachedEthPrice;
+  }
+  try {
+    const { data } = await axios.get('https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd', { timeout: 10000 });
+    cachedEthPrice = data.ethereum.usd;
+    lastEthFetch = now;
+    return cachedEthPrice;
+  } catch (err) {
+    console.warn(`\u274c ETH price fetch failed: ${err.message}`);
+    return cachedEthPrice;
+  }
+}
 
 const routerAbi = [
   'function swapExactETHForTokens(uint amountOutMin, address[] calldata path, address to, uint deadline) payable returns (uint[] memory amounts)',
@@ -27,7 +49,7 @@ const pairAbi = [
 
 const provider = new ethers.InfuraProvider('mainnet', process.env.INFURA_API_KEY);
 const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
-const walletAddress = ethers.utils.getAddress(wallet.address);
+const walletAddress = getAddress(wallet.address);
 
 async function withRetry(fn, retries = 3, delay = 1000) {
   for (let i = 0; i < retries; i++) {
@@ -46,12 +68,12 @@ async function withRetry(fn, retries = 3, delay = 1000) {
 }
 // Uniswap V2 Router
 const router = new ethers.Contract(
-  ethers.utils.getAddress('0x7a250d5630b4cf539739df2c5dacb4c659f2488d'),
+  getAddress('0x7a250d5630b4cf539739df2c5dacb4c659f2488d'),
   routerAbi,
   wallet
 );
 
-const factoryAddress = ethers.getAddress('0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f');
+const factoryAddress = getAddress('0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f');
 const factory = new ethers.Contract(factoryAddress, factoryAbi, provider);
 
 const WETH_ADDRESS = TOKENS.WETH;
@@ -130,21 +152,26 @@ async function validateLiquidity(tokenA, tokenB) {
   try {
     const pairAddr = await withRetry(() => factory.getPair(tokenA, tokenB));
     if (pairAddr === ethers.ZeroAddress) {
-      console.log('[SKIP] No Uniswap pair found');
+      console.log(`\u274c No Uniswap pair found`);
       return false;
     }
     const pair = new ethers.Contract(pairAddr, pairAbi, provider);
     const reserves = await withRetry(() => pair.getReserves());
     const token0 = await withRetry(() => pair.token0());
     const r0 = token0.toLowerCase() === tokenA.toLowerCase() ? reserves[0] : reserves[1];
-    const r1 = token0.toLowerCase() === tokenA.toLowerCase() ? reserves[1] : reserves[0];
-    if (r0 === 0n || r1 === 0n) {
-      console.log('[SKIP] Pair has zero reserves');
+    if (r0 === 0n) {
+      console.log(`\u274c Pair has zero reserves`);
+      return false;
+    }
+    const ethPrice = await getEthPrice();
+    const wethAmt = Number(ethers.formatEther(r0));
+    if (ethPrice && wethAmt * ethPrice < 500) {
+      console.log(`\u274c Liquidity < $500`);
       return false;
     }
     return true;
   } catch (err) {
-    console.log(`[SKIP] Liquidity validation failed: ${err.message}`);
+    console.log(`\u274c Liquidity validation failed: ${err.message}`);
     return false;
   }
 }
@@ -154,7 +181,7 @@ async function buy(amountEth, path, token, opts = {}) {
   if (token && ['ETH', 'WETH'].includes(token.toUpperCase())) {
     return null;
   }
-  console.log(`[START] Buy ${token} at ${new Date().toISOString()}`);
+  console.log(`\uD83D\uDD25 Buy ${token} at ${new Date().toISOString()}`);
   if (!await gasOkay()) return null;
   const tokenAddr = TOKENS[token.toUpperCase()];
   if (!tokenAddr) {
@@ -164,7 +191,7 @@ async function buy(amountEth, path, token, opts = {}) {
   const swapPath = [WETH_ADDRESS, tokenAddr];
   const wethBal = await getTokenBalance(WETH_ADDRESS, walletAddress, 'WETH');
   if (amountEth > wethBal) {
-    console.log(`[SKIP] Not enough WETH for ${token}`);
+    console.log(`\u274c Not enough WETH for ${token}`);
     return null;
   }
   if (!await validateLiquidity(WETH_ADDRESS, tokenAddr)) {
@@ -179,11 +206,11 @@ async function buy(amountEth, path, token, opts = {}) {
       )
     );
     if (!amounts || !amounts[1] || amounts[1] === 0n) {
-      console.log(`[SKIP] Not enough liquidity for ${token}`);
+      console.log(`\u274c Not enough liquidity for ${token}`);
       appendLog({ time: new Date().toISOString(), action: 'SKIP', token, reason: 'liquidity' });
       return null;
     }
-    if (opts.simulate) {
+    if (opts.simulate || opts.dryRun || DRY_RUN) {
       await withRetry(() =>
         router.swapExactETHForTokens.staticCall(
           0,
@@ -195,7 +222,7 @@ async function buy(amountEth, path, token, opts = {}) {
       );
     }
   } catch (err) {
-    console.log(`[SKIP] Unable to get quote for ${token}: ${err.message}`);
+    console.log(`\u274c Unable to get quote for ${token}: ${err.message}`);
     appendLog({ time: new Date().toISOString(), action: 'SKIP', token, reason: 'liquidity' });
     return null;
   }
@@ -210,6 +237,11 @@ async function buy(amountEth, path, token, opts = {}) {
       { value: parseAmount(amt, 'ETH') }
     ));
     console.log(`[GAS] Estimated ${Number(gasEst)} units`);
+    if (opts.dryRun || DRY_RUN) {
+      console.log('\u267B Dry run - transaction not sent');
+      appendLog({ time: new Date().toISOString(), action: 'DRY-BUY', token, amountEth: amt });
+      return null;
+    }
     const tx = await withRetry(() =>
       router.swapExactETHForTokens(
         0,
@@ -233,7 +265,7 @@ async function sell(amountToken, path, token, opts = {}) {
   if (token && ['ETH', 'WETH'].includes(token.toUpperCase())) {
     return null;
   }
-  console.log(`[START] Sell ${token} at ${new Date().toISOString()}`);
+  console.log(`\uD83D\uDD25 Sell ${token} at ${new Date().toISOString()}`);
   if (!await gasOkay()) return null;
   const tokenAddr = TOKENS[token.toUpperCase()];
   if (!tokenAddr) {
@@ -243,7 +275,7 @@ async function sell(amountToken, path, token, opts = {}) {
   const swapPath = [tokenAddr, WETH_ADDRESS];
   const bal = await getTokenBalance(tokenAddr, walletAddress, token);
   if (amountToken > bal) {
-    console.log(`[SKIP] Not enough ${token} to sell`);
+    console.log(`\u274c Not enough ${token} to sell`);
     return null;
   }
   if (!await validateLiquidity(tokenAddr, WETH_ADDRESS)) {
@@ -258,11 +290,11 @@ async function sell(amountToken, path, token, opts = {}) {
       )
     );
     if (!amounts || !amounts[1] || amounts[1] === 0n) {
-      console.log(`[SKIP] Not enough liquidity for ${token}`);
+      console.log(`\u274c Not enough liquidity for ${token}`);
       appendLog({ time: new Date().toISOString(), action: 'SKIP', token, reason: 'liquidity' });
       return null;
     }
-    if (opts.simulate) {
+    if (opts.simulate || opts.dryRun || DRY_RUN) {
       await withRetry(() =>
         router.swapExactTokensForETH.staticCall(
           parseAmount(Number(amountToken).toFixed(6), token),
@@ -274,7 +306,7 @@ async function sell(amountToken, path, token, opts = {}) {
       );
     }
   } catch (err) {
-    console.log(`[SKIP] Unable to get quote for ${token}: ${err.message}`);
+    console.log(`\u274c Unable to get quote for ${token}: ${err.message}`);
     appendLog({ time: new Date().toISOString(), action: 'SKIP', token, reason: 'liquidity' });
     return null;
   }
@@ -289,6 +321,11 @@ async function sell(amountToken, path, token, opts = {}) {
       Math.floor(Date.now() / 1000) + 60 * 10
     ));
     console.log(`[GAS] Estimated ${Number(gasEst)} units`);
+    if (opts.dryRun || DRY_RUN) {
+      console.log('\u267B Dry run - transaction not sent');
+      appendLog({ time: new Date().toISOString(), action: 'DRY-SELL', token, amountToken: amt });
+      return null;
+    }
     const tx = await withRetry(() =>
       router.swapExactTokensForETH(
         parseAmount(amt, token),
