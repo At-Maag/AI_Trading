@@ -41,13 +41,18 @@ async function fetchEthPrice() {
 async function validateToken(token, ethPrice) {
   let address = token.platforms && token.platforms.ethereum;
   if (!address) {
+    // Fall back to a statically configured address if available
+    address = TOKENS[token.symbol.toUpperCase()];
+  }
+  if (!address) {
     try {
+      // Attempt ENS lookup as a last resort
       address = await provider.resolveName(`${token.symbol}.eth`);
     } catch {}
-    if (!address) {
-      console.warn(`\u274c Missing address for ${token.symbol.toUpperCase()}`);
-      return null;
-    }
+  }
+  if (!address) {
+    console.warn(`\u274c Missing address for ${token.symbol.toUpperCase()}`);
+    return null;
   }
   let checksummed;
   try {
