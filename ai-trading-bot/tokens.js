@@ -1,13 +1,12 @@
 // Token address configuration and validation helpers
 // This module exports a map of token symbols to checksummed Ethereum
-// addresses.  Addresses are normalized using `getAddress` from
-// `ethers/lib/utils` so invalid checksums are caught immediately.  Any
-// bad address is logged and skipped rather than throwing so the bot
+// addresses.  Addresses are normalized using `getAddress` from the
+// ethers library so invalid checksums are caught immediately.  Any bad
+// address is logged and skipped rather than throwing so the bot
 // can continue running safely.
 
-// Using the lightweight utility import avoids pulling in the entire
-// ethers bundle during require.
-const { getAddress } = require('ethers/lib/utils');
+// Ethers v6 exposes utilities directly from the main entry point.
+const { getAddress } = require('ethers');
 
 function safeGetAddress(addr, symbol) {
   try {

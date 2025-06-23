@@ -1,6 +1,6 @@
 const axios = require('axios');
 const { ethers } = require('ethers');
-const { getAddress } = require('ethers/lib/utils');
+const { getAddress } = require('ethers');
 const TOKENS = require('./tokens');
 require('dotenv').config();
 
