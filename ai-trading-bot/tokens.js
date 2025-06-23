@@ -18,7 +18,10 @@ function safeGetAddress(addr, symbol) {
 }
 
 const TOKENS = {
-  WETH: safeGetAddress('0xC02aaA39b223fe8d0a0e5c4f27ead9083c756cc2', 'WETH'),
+  // Ensure the WETH address is using the proper checksum. A mixed-case
+  // address without a valid checksum triggers ethers.getAddress() to
+  // throw an INVALID_ARGUMENT error at startup.
+  WETH: safeGetAddress('0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2', 'WETH'),
   LINK: safeGetAddress('0x514910771af9ca656af840dff83e8264ecf986ca', 'LINK'),
   UNI: safeGetAddress('0x1f9840a85d5af5bf1d1762f925bdaddc4201f984', 'UNI'),
   ARB: safeGetAddress('0x912ce59144191c1204e64559fe8253a0e49e6548', 'ARB'),
