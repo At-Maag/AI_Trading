@@ -31,9 +31,9 @@ function takeProfit(symbol, price) {
 function calculatePositionSize(score, ethBalance, ethPrice) {
   ethPrice = ethPrice || 3500;
   const s = Math.max(1, Math.min(score, 3));
-  const allocation = 0.2 * (s / 3); // max 20% of wallet when score is 3
+  const allocation = 0.15 * (s / 3); // cap at 15% of wallet
   const amountEth = ethBalance * allocation;
-  if (amountEth * ethPrice < 10 || amountEth < 0.0045) return 0;
+  if (amountEth * ethPrice < 10 || amountEth <= 0) return 0;
   return amountEth;
 }
 module.exports = { updateEntry, stopLoss, takeProfit, getEntry, calculatePositionSize };

@@ -1,5 +1,5 @@
 module.exports = {
-  SLIPPAGE: 0.005, // 0.5%
+  SLIPPAGE: 0.01, // 1% slippage tolerance
   // Start with a minimal list. Additional tokens are loaded dynamically
   // from the CoinGecko API at runtime via top25.js
   coins: [
@@ -15,6 +15,6 @@ module.exports = {
   TAKE_PROFIT: 0.08, // 8%
   TRAILING_STOP: 0.02,
   GAS_LIMIT_GWEI: 80,
-  TRADE_ALLOCATION: 0.22,
+  TRADE_ALLOCATION: 0.15,
   prettyLogs: true
 };

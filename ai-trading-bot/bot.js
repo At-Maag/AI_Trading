@@ -13,6 +13,16 @@ const { getValidTokens, getTop25TradableTokens } = require('./top25');
 const MIN_TRADE_USD = 10;
 console.debug = () => {};
 
+function localTime() {
+  return new Date().toLocaleTimeString('en-US', {
+    timeZone: 'America/Los_Angeles',
+    hour12: true,
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZoneName: 'short'
+  });
+}
+
 const routerAbi = [
   'function swapExactETHForTokens(uint amountOutMin, address[] calldata path, address to, uint deadline) payable returns (uint[] memory amounts)',
   'function swapExactTokensForETH(uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline) returns (uint[] memory amounts)',
@@ -34,7 +44,7 @@ async function refreshTokenList(initial = false) {
   if (initial || !validTokens.length) {
     validTokens = tokens.slice(0, 25);
     config.coins = ['WETH', ...validTokens];
-    console.log(`[TOKENS] Loaded ${validTokens.length} tradable tokens`);
+    console.log(`[${localTime()}] [TOKENS] Loaded ${validTokens.length} tradable tokens`);
     return;
   }
 
@@ -60,7 +70,7 @@ async function refreshTokenList(initial = false) {
   }
 
   config.coins = ['WETH', ...validTokens];
-  console.log(`[TOKENS] Replaced ${toRemove.length} tokens`);
+  console.log(`[${localTime()}] [TOKENS] Replaced ${toRemove.length} tokens`);
 }
 
 async function withRetry(fn, retries = 3, delay = 1000) {
@@ -103,7 +113,7 @@ const crashFile = path.join(__dirname, '..', 'logs', 'error-log.txt');
 
 function logError(err) {
   try { fs.mkdirSync(path.dirname(crashFile), { recursive: true }); } catch {}
-  const ts = new Date().toISOString();
+  const ts = localTime();
   const msg = err instanceof Error ? err.stack || err.message : err;
   fs.appendFileSync(crashFile, `[${ts}] ${msg}\n`);
   console.error(msg);
@@ -123,7 +133,7 @@ function logTrade(side, token, amount, price, reason, pnlPct) {
 
   try { fs.mkdirSync(path.dirname(tradeLogTxt), { recursive: true }); } catch {}
   const emoji = '💰';
-  let line = `${emoji} [${entry.time}] ${side} ${token} ${amount} @ $${price}`;
+  let line = `${emoji} [${localTime()}] ${side} ${token} ${amount} @ $${price}`;
   if (reason) line += ` (${reason})`;
   if (typeof pnlPct === 'number') line += ` PnL ${pnlPct.toFixed(2)}%`;
   fs.appendFileSync(tradeLogTxt, line + '\n');
@@ -183,7 +193,7 @@ function formatTable(rows, headers = []) {
 
 function renderSummary(list, wethBal = 0, ethPrice = 0) {
   const top = list.slice(0, 5);
-  const ts = new Date().toISOString().replace('T', ' ').slice(0, 19);
+  const ts = localTime();
   fullScanCount++;
   const coins = [...new Set([...config.coins, ...activePositions])];
   const pnlUsd = (wethBal - startWeth) * (ethPrice || 0);
@@ -193,13 +203,18 @@ function renderSummary(list, wethBal = 0, ethPrice = 0) {
   process.stdout.write('\x1Bc');
   if (config.prettyLogs) {
     console.log(`[${ts}] [Scan ${fullScanCount}/14] ${color('=== ♦ TOP 5 COINS ===', 'magenta')}  [${coins.length - 1} Tokens] [WETH ${wethBal.toFixed(2)} (${formatUsd(wethValue)}) | PnL: ${pnlColored}]`);
-    const rows = top.map(r => [
-      r.symbol,
-      `$${r.price.toFixed(2)}`,
-      String(r.score),
-      r.signals.join(', ') || '-'
-    ]);
-    console.log(formatTable(rows, ['Symbol', 'Price', 'Score', 'Matched Signals']));
+    const rows = top.map(r => {
+      const entry = risk.getEntry(r.symbol);
+      const pnl = entry ? (((r.price - entry) / entry) * 100).toFixed(2) + '%' : '-';
+      return [
+        r.symbol,
+        `$${r.price.toFixed(2)}`,
+        String(r.score),
+        pnl,
+        r.signals.join(', ') || '-'
+      ];
+    });
+    console.log(formatTable(rows, ['Symbol', 'Price', 'Score', 'PnL', 'Matched Signals']));
   } else {
     console.log(`[${ts}] [Scan ${fullScanCount}/14] TOP 5: ` + top.map(r => `${r.symbol}:${r.score}`).join(' '));
   }
@@ -215,7 +230,7 @@ async function evaluate(prices, wethBal, ethPrice) {
   const coins = [...new Set([...config.coins, ...activePositions])];
   const totalScans = coins.length;
   for (const [index, symbol] of coins.entries()) {
-    const ts = new Date().toISOString().replace('T', ' ').slice(0, 19);
+    const ts = localTime();
     // console.log(`[${ts}] [Scan ${index + 1}/${totalScans}] === ♦ TOP 5 COINS (Highest Scores) ===`);
     // console.log(`[${ts}] Scanning ${index + 1}/${totalScans}: ${symbol}`);
     const price = prices[symbol.toLowerCase()];
@@ -252,6 +267,10 @@ async function checkTrades(entries, ethPrice, isTop) {
     if (!activeTrades[symbol]) {
       if (strategy.shouldBuy(symbol, closing)) {
         const balance = await trade.getWethBalance();
+        if (balance * (ethPrice || 0) < 10) {
+          console.log('⚠️ Skipping trade – not enough balance');
+          continue;
+        }
         const feeData = await withRetry(() => provider.getFeeData());
         const gasPrice = feeData.gasPrice || ethers.parseUnits('0', 'gwei');
         const gasCost = Number(ethers.formatEther(gasPrice * 210000n));
@@ -345,7 +364,7 @@ async function loop() {
 }
 
 function main() {
-  console.log('\ud83d\ude80 Bot started.');
+  console.log(`🚀 Bot started at ${localTime()}.`);
   refreshTokenList(true).catch(logError);
   setInterval(() => {
     refreshTokenList().catch(logError);

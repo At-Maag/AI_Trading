@@ -8,6 +8,16 @@ require('dotenv').config();
 const DRY_RUN = process.env.DRY_RUN === 'true';
 const MIN_TRADE_USD = 10;
 
+function localTime() {
+  return new Date().toLocaleTimeString('en-US', {
+    timeZone: 'America/Los_Angeles',
+    hour12: true,
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZoneName: 'short'
+  });
+}
+
 let cachedEthPrice = null;
 let lastEthFetch = 0;
 
@@ -80,6 +90,7 @@ const factoryAddress = getAddress('0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f');
 const factory = new ethers.Contract(factoryAddress, factoryAbi, provider);
 
 const WETH_ADDRESS = TOKENS.WETH;
+const SLIPPAGE_BPS = BigInt(Math.round((config.SLIPPAGE || 0.01) * 10000));
 
 // Decimal definitions for tokens. Default to 18, fallback to 6 if unknown
 const TOKEN_DECIMALS = {
@@ -129,7 +140,7 @@ const errorLogPath = path.join(__dirname, '..', 'logs', 'error-log.txt');
 
 function logError(err) {
   try { fs.mkdirSync(path.dirname(errorLogPath), { recursive: true }); } catch {}
-  const ts = new Date().toISOString();
+  const ts = localTime();
   const msg = err instanceof Error ? err.stack || err.message : err;
   fs.appendFileSync(errorLogPath, `[${ts}] ${msg}\n`);
   console.error(msg);
@@ -146,7 +157,7 @@ function appendLog(entry) {
   fs.writeFileSync(logPath, JSON.stringify(data, null, 2));
 
   try { fs.mkdirSync(path.dirname(tradeLogTxt), { recursive: true }); } catch {}
-  let line = `[${entry.time}] ${entry.action}`;
+  let line = `[${localTime()}] ${entry.action}`;
   if (entry.token) line += ` ${entry.token}`;
   if (entry.amountEth) line += ` ${entry.amountEth}`;
   if (entry.amountToken) line += ` ${entry.amountToken}`;
@@ -199,7 +210,7 @@ async function buy(amountEth, path, token, opts = {}) {
   if (token && ['ETH', 'WETH'].includes(token.toUpperCase())) {
     return { success: false, reason: 'invalid-token' };
   }
-  console.log(`\uD83D\uDD25 Buy ${token} at ${new Date().toISOString()}`);
+  console.log(`🔥 Buy ${token} at ${localTime()}`);
   if (!await gasOkay()) return { success: false, reason: 'gas' };
   const ethPrice = await getEthPrice();
   if (ethPrice && amountEth * ethPrice < MIN_TRADE_USD) {
@@ -222,6 +233,7 @@ async function buy(amountEth, path, token, opts = {}) {
     return { success: false, reason: 'liquidity' };
   }
   await ensureAllowance(WETH_ADDRESS, 'WETH', parseAmount(amountEth, 'WETH'));
+  let minOut;
   try {
     const amounts = await withRetry(() =>
       router.getAmountsOut(
@@ -234,11 +246,12 @@ async function buy(amountEth, path, token, opts = {}) {
       appendLog({ time: new Date().toISOString(), action: 'SKIP', token, reason: 'liquidity' });
       return { success: false, reason: 'liquidity' };
     }
+    minOut = amounts[1] * (10000n - SLIPPAGE_BPS) / 10000n;
     if (opts.simulate || opts.dryRun || DRY_RUN) {
       await withRetry(() =>
         router.swapExactTokensForTokens.staticCall(
           parseAmount(Number(amountEth).toFixed(6), 'WETH'),
-          0,
+          minOut,
           swapPath,
           walletAddress,
           Math.floor(Date.now() / 1000) + 60 * 10
@@ -253,10 +266,10 @@ async function buy(amountEth, path, token, opts = {}) {
   }
   try {
     const amt = Number(amountEth).toFixed(6);
-    console.log(`[BUY] ${amt} WETH \u2192 ${token}`);
+    console.log(`[BUY] ${amt} WETH → ${token}`);
     const gasEst = await withRetry(() => router.swapExactTokensForTokens.estimateGas(
       parseAmount(amt, 'WETH'),
-      0,
+      minOut,
       swapPath,
       walletAddress,
       Math.floor(Date.now() / 1000) + 60 * 10
@@ -267,21 +280,31 @@ async function buy(amountEth, path, token, opts = {}) {
       appendLog({ time: new Date().toISOString(), action: 'DRY-BUY', token, amountEth: amt });
       return { success: true, simulated: true };
     }
+    const beforeBal = await getTokenBalance(tokenAddr, walletAddress, token);
     const tx = await withRetry(() =>
       router.swapExactTokensForTokens(
         parseAmount(amt, 'WETH'),
-        0,
+        minOut,
         swapPath,
         walletAddress,
         Math.floor(Date.now() / 1000) + 60 * 10
       )
     );
     const receipt = await tx.wait();
+    console.log(`✅ Buy TX sent: ${tx.hash}`);
+    const afterBal = await getTokenBalance(tokenAddr, walletAddress, token);
+    const diff = afterBal - beforeBal;
+    if (diff > 0) {
+      console.log(`🎉 Bought ${diff.toFixed(2)} ${token} successfully`);
+    } else {
+      console.log(`❌ No ${token} received`);
+    }
     appendLog({ time: new Date().toISOString(), action: 'BUY', token, amountEth: amt, tx: tx.hash });
     return { success: true, tx: tx.hash };
   } catch (err) {
     const hash = err.transactionHash || (err.transaction && err.transaction.hash);
-    logError(`Failed to trade WETH \u2192 ${token} | ${err.message} ${hash ? '| tx ' + hash : ''}`);
+    logError(`Failed to trade WETH \u2192 ${token} | ${err.message} ${hash ? '|tx ' + hash : ''}`);
+    console.log(`❌ Swap failed for ${token}`);
     return { success: false, reason: err.message };
   }
 }
@@ -290,7 +313,7 @@ async function sell(amountToken, path, token, opts = {}) {
   if (token && ['ETH', 'WETH'].includes(token.toUpperCase())) {
     return { success: false, reason: 'invalid-token' };
   }
-  console.log(`\uD83D\uDD25 Sell ${token} at ${new Date().toISOString()}`);
+  console.log(`🔥 Sell ${token} at ${localTime()}`);
   if (!await gasOkay()) return { success: false, reason: 'gas' };
   const tokenAddr = TOKENS[token.toUpperCase()];
   if (!tokenAddr) {
@@ -299,8 +322,12 @@ async function sell(amountToken, path, token, opts = {}) {
   }
   const swapPath = [tokenAddr, WETH_ADDRESS];
   const bal = await getTokenBalance(tokenAddr, walletAddress, token);
+  if (bal <= 0) {
+    console.log(`❌ No ${token} to sell`);
+    return { success: false, reason: 'balance' };
+  }
   if (amountToken > bal) {
-    console.log(`\u274c Not enough ${token} to sell`);
+    console.log(`❌ Not enough ${token} to sell`);
     return { success: false, reason: 'balance' };
   }
   if (!await validateLiquidity(tokenAddr, WETH_ADDRESS, token)) {
@@ -308,6 +335,7 @@ async function sell(amountToken, path, token, opts = {}) {
     return { success: false, reason: 'liquidity' };
   }
   await ensureAllowance(tokenAddr, token, parseAmount(amountToken, token));
+  let minOut;
   try {
     const amounts = await withRetry(() =>
       router.getAmountsOut(
@@ -326,11 +354,12 @@ async function sell(amountToken, path, token, opts = {}) {
       console.log(`[TRADE] Skipped ${token}: trade amount below $${MIN_TRADE_USD}`);
       return { success: false, reason: 'amount' };
     }
+    minOut = amounts[1] * (10000n - SLIPPAGE_BPS) / 10000n;
     if (opts.simulate || opts.dryRun || DRY_RUN) {
       await withRetry(() =>
         router.swapExactTokensForTokens.staticCall(
           parseAmount(Number(amountToken).toFixed(6), token),
-          0,
+          minOut,
           swapPath,
           walletAddress,
           Math.floor(Date.now() / 1000) + 60 * 10
@@ -345,10 +374,10 @@ async function sell(amountToken, path, token, opts = {}) {
   }
   try {
     const amt = Number(amountToken).toFixed(6);
-    console.log(`[SELL] ${token} \u2192 WETH`);
+    console.log(`[SELL] ${token} → WETH`);
     const gasEst = await withRetry(() => router.swapExactTokensForTokens.estimateGas(
       parseAmount(amt, token),
-      0,
+      minOut,
       swapPath,
       walletAddress,
       Math.floor(Date.now() / 1000) + 60 * 10
@@ -359,16 +388,20 @@ async function sell(amountToken, path, token, opts = {}) {
       appendLog({ time: new Date().toISOString(), action: 'DRY-SELL', token, amountToken: amt });
       return { success: true, simulated: true };
     }
+    const beforeWeth = await getTokenBalance(WETH_ADDRESS, walletAddress, 'WETH');
     const tx = await withRetry(() =>
       router.swapExactTokensForTokens(
         parseAmount(amt, token),
-        0,
+        minOut,
         swapPath,
         walletAddress,
         Math.floor(Date.now() / 1000) + 60 * 10
       )
     );
     const receipt = await tx.wait();
+    const afterWeth = await getTokenBalance(WETH_ADDRESS, walletAddress, 'WETH');
+    const earned = afterWeth - beforeWeth;
+    console.log(`✅ Sold ${token} for ${earned.toFixed(4)} WETH`);
     appendLog({ time: new Date().toISOString(), action: 'SELL', token, amountToken: amt, tx: tx.hash });
     return { success: true, tx: tx.hash };
   } catch (err) {
