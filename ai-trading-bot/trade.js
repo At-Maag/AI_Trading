@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const config = require('./config');
 const TOKENS = require('./tokens');
+const { ID_MAP } = require('./datafeeds');
 require('dotenv').config();
 const DRY_RUN = process.env.DRY_RUN === 'true';
 const MIN_TRADE_USD = 10;
@@ -37,6 +38,21 @@ async function getEthPrice() {
   } catch (err) {
     console.warn(`\u274c ETH price fetch failed: ${err.message}`);
     return cachedEthPrice;
+  }
+}
+
+async function getTokenUsdPrice(symbol) {
+  const id = ID_MAP[symbol.toUpperCase()];
+  if (!id) return null;
+  try {
+    const { data } = await axios.get(
+      'https://api.coingecko.com/api/v3/simple/price',
+      { params: { ids: id, vs_currencies: 'usd' }, timeout: 10000 }
+    );
+    return data[id]?.usd || null;
+  } catch (err) {
+    console.warn(`\u274c ${symbol} price fetch failed: ${err.message}`);
+    return null;
   }
 }
 
@@ -299,6 +315,12 @@ async function sell(amountToken, path, token, opts = {}) {
     appendLog({ time: new Date().toISOString(), action: 'SKIP', token, reason: 'liquidity' });
     return { success: false, reason: 'liquidity' };
   }
+
+  const usdPrice = await getTokenUsdPrice(token);
+  if (usdPrice && amountToken * usdPrice < MIN_TRADE_USD) {
+    console.log(`[SKIP] ${token} sell amount $${(amountToken * usdPrice).toFixed(2)} is below $${MIN_TRADE_USD} limit`);
+    return { success: false, reason: 'amount' };
+  }
   await ensureAllowance(tokenAddr, token, parseAmount(amountToken, token));
   let minOut;
   try {
@@ -315,8 +337,8 @@ async function sell(amountToken, path, token, opts = {}) {
     }
     const ethPrice = await getEthPrice();
     const wethOut = Number(ethers.formatEther(amounts[1]));
-    if (ethPrice && wethOut * ethPrice < MIN_TRADE_USD) {
-      console.log(`[TRADE] Skipped ${token}: trade amount below $${MIN_TRADE_USD}`);
+    if (!usdPrice && ethPrice && wethOut * ethPrice < MIN_TRADE_USD) {
+      console.log(`[SKIP] ${token} sell amount $${(wethOut * ethPrice).toFixed(2)} is below $${MIN_TRADE_USD} limit`);
       return { success: false, reason: 'amount' };
     }
     minOut = amounts[1] * (10000n - SLIPPAGE_BPS) / 10000n;
