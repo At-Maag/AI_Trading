@@ -24,14 +24,43 @@ const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
 const walletAddress = getAddress(wallet.address);
 
 let validTokens = [];
+const activePositions = new Set();
+const lastScores = {};
 
-async function refreshTokenList() {
+async function refreshTokenList(initial = false) {
   const tokens = await getValidTokens();
-  if (tokens && tokens.length) {
-    validTokens = tokens;
+  if (!tokens || !tokens.length) return;
+
+  if (initial || !validTokens.length) {
+    validTokens = tokens.slice(0, 25);
     config.coins = ['WETH', ...validTokens];
     console.log(`[TOKENS] Loaded ${validTokens.length} tradable tokens`);
+    return;
   }
+
+  const candidates = tokens.filter(t => !validTokens.includes(t));
+  const sortable = validTokens.filter(t => !activePositions.has(t));
+  sortable.sort((a, b) => (lastScores[a] || 0) - (lastScores[b] || 0));
+
+  const replaceCount = Math.min(10, candidates.length, sortable.length);
+  const toRemove = sortable.slice(0, replaceCount);
+  const toAdd = candidates.slice(0, replaceCount);
+
+  validTokens = validTokens.filter(t => !toRemove.includes(t));
+  validTokens.push(...toAdd);
+
+  const prices = await getPrices();
+  for (const symbol of toAdd) {
+    const price = prices[symbol.toLowerCase()];
+    if (price) {
+      if (!history[symbol]) history[symbol] = [];
+      history[symbol].push(price, price);
+      history[symbol] = history[symbol].slice(-2);
+    }
+  }
+
+  config.coins = ['WETH', ...validTokens];
+  console.log(`[TOKENS] Replaced ${toRemove.length} tokens`);
 }
 
 async function withRetry(fn, retries = 3, delay = 1000) {
@@ -135,7 +164,7 @@ function renderSummary(list) {
   const ts = new Date().toISOString().replace('T', ' ').slice(0, 19);
   fullScanCount++;
   if (config.prettyLogs) {
-    console.log(`[${ts}] [Scan ${fullScanCount}/14] ${color('=== 🏆 TOP 5 COINS (Highest Scores) ===', 'magenta')}`);
+    console.log(`[${ts}] [Scan ${fullScanCount}/14] ${color('=== 🔍 TOP 5 COINS (Highest Scores) ===', 'magenta')}`);
     const rows = top.map(r => [
       r.symbol,
       `$${r.price.toFixed(2)}`,
@@ -155,8 +184,9 @@ function renderSummary(list) {
 
 async function evaluate(prices) {
   const res = [];
-  const totalScans = config.coins.length;
-  for (const [index, symbol] of config.coins.entries()) {
+  const coins = [...new Set([...config.coins, ...activePositions])];
+  const totalScans = coins.length;
+  for (const [index, symbol] of coins.entries()) {
     const ts = new Date().toISOString().replace('T', ' ').slice(0, 19);
     // console.log(`[${ts}] [Scan ${index + 1}/${totalScans}] === ♦ TOP 5 COINS (Highest Scores) ===`);
     // console.log(`[${ts}] Scanning ${index + 1}/${totalScans}: ${symbol}`);
@@ -167,6 +197,7 @@ async function evaluate(prices) {
     if (history[symbol].length > 100) history[symbol].shift();
     const closing = history[symbol];
     const { score, signals } = strategy.score(closing);
+    lastScores[symbol] = score;
     res.push({ symbol, price, score, signals, closing });
   }
   res.sort((a, b) => b.score - a.score);
@@ -216,6 +247,7 @@ async function checkTrades(entries, ethPrice, isTop) {
         }
         risk.updateEntry(symbol, price);
         activeTrades[symbol] = true;
+        activePositions.add(symbol);
         logTrade('BUY', symbol, amountEth, price, 'signal');
       }
     } else {
@@ -245,6 +277,7 @@ async function checkTrades(entries, ethPrice, isTop) {
         }
         logTrade('SELL', symbol, 0.01, price, reason, pnl);
         activeTrades[symbol] = false;
+        activePositions.delete(symbol);
       }
     }
   }
@@ -252,7 +285,6 @@ async function checkTrades(entries, ethPrice, isTop) {
 
 async function loop() {
   try {
-    console.clear();
     const prices = await getPrices();
     if (!prices) return;
     const evaluations = await evaluate(prices);
@@ -270,10 +302,10 @@ async function loop() {
 
 function main() {
   console.log('\ud83d\ude80 Bot started.');
-  refreshTokenList().catch(logError);
+  refreshTokenList(true).catch(logError);
   setInterval(() => {
     refreshTokenList().catch(logError);
-  }, 12 * 60 * 60 * 1000);
+  }, 60 * 60 * 1000);
   setInterval(() => {
     loop().catch(logError);
   }, 60 * 1000);
