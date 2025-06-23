@@ -290,14 +290,14 @@ async function checkTrades(entries, ethPrice, isTop) {
         let res;
         if (!paper) {
           try {
-            res = await trade.buy(amountEth, [WETH, tokenAddr], symbol, { simulate: isTop, dryRun: DRY_RUN });
+            res = await trade.buy(symbol, { simulate: isTop, dryRun: DRY_RUN });
             if (!res.success) recordFailure(symbol, res.reason);
           } catch (err) {
             logError(`Failed to trade ETH \u2192 ${symbol} | ${err.message}`);
             recordFailure(symbol, err.message);
           }
         } else {
-          res = await trade.buy(amountEth, [WETH, tokenAddr], symbol, { simulate: isTop, dryRun: true });
+          res = await trade.buy(symbol, { simulate: isTop, dryRun: true });
         }
         if (res && res.success) {
           risk.updateEntry(symbol, price);

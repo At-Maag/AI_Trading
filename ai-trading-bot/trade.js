@@ -7,6 +7,8 @@ const TOKENS = require('./tokens');
 require('dotenv').config();
 const DRY_RUN = process.env.DRY_RUN === 'true';
 const MIN_TRADE_USD = 10;
+const MIN_BUY_USD = 5;
+const MIN_WETH_BAL = 0.005;
 const MIN_RECEIVE_TOKENS = 0.001;
 
 function localTime() {
@@ -207,119 +209,69 @@ async function validateLiquidity(tokenA, tokenB, symbol) {
 }
 
 
-async function buy(amountEth, path, token, opts = {}) {
+async function buy(token, opts = {}) {
   if (token && ['ETH', 'WETH'].includes(token.toUpperCase())) {
     return { success: false, reason: 'invalid-token' };
   }
-  console.log(`🔥 Buy ${token} at ${localTime()}`);
+
   if (!await gasOkay()) return { success: false, reason: 'gas' };
-  const ethPrice = await getEthPrice();
-  if (ethPrice && amountEth * ethPrice < MIN_TRADE_USD) {
-    console.log(`[TRADE] Skipped ${token}: trade amount below $${MIN_TRADE_USD}`);
-    return { success: false, reason: 'amount' };
-  }
+
   const tokenAddr = TOKENS[token.toUpperCase()];
   if (!tokenAddr) {
-    console.log("Token address is null, skipping trade.");
+    console.log('Token address is null, skipping trade.');
     return { success: false, reason: 'no-address' };
   }
-  const swapPath = [WETH_ADDRESS, tokenAddr];
+
   const wethBal = await getTokenBalance(WETH_ADDRESS, walletAddress, 'WETH');
-  if (amountEth > wethBal) {
-    console.log(`\u274c Not enough WETH for ${token}`);
+  if (wethBal < MIN_WETH_BAL) {
+    console.log(`🕒 [${localTime()}] ⚠️ Not enough WETH to trade`);
     return { success: false, reason: 'balance' };
   }
+
+  const amountEth = wethBal * 0.15;
+  const ethPrice = await getEthPrice();
+  if (amountEth <= 0 || (ethPrice && amountEth * ethPrice < MIN_BUY_USD)) {
+    console.log(`🕒 [${localTime()}] ⚠️ Trade amount below $${MIN_BUY_USD}`);
+    return { success: false, reason: 'amount' };
+  }
+
   if (!await validateLiquidity(WETH_ADDRESS, tokenAddr, token)) {
     appendLog({ time: new Date().toISOString(), action: 'SKIP', token, reason: 'liquidity' });
     return { success: false, reason: 'liquidity' };
   }
-  await ensureAllowance(WETH_ADDRESS, 'WETH', parseAmount(amountEth, 'WETH'));
-  let minOut;
-  let expectedOut;
-  try {
-    const amounts = await withRetry(() =>
-      router.getAmountsOut(
-        parseAmount(amountEth, 'WETH'),
-        swapPath
-      )
-    );
-    if (!amounts || !amounts[1] || amounts[1] === 0n) {
-      console.log(`\u274c Not enough liquidity for ${token}`);
-      appendLog({ time: new Date().toISOString(), action: 'SKIP', token, reason: 'liquidity' });
-      return { success: false, reason: 'liquidity' };
-    }
-    expectedOut = amounts[1];
-    minOut = amounts[1] * (10000n - SLIPPAGE_BPS) / 10000n;
-    if (opts.simulate || opts.dryRun || DRY_RUN) {
-      await withRetry(() =>
-        router.swapExactTokensForTokens.staticCall(
-          parseAmount(Number(amountEth).toFixed(6), 'WETH'),
-          minOut,
-          swapPath,
-          walletAddress,
-          Math.floor(Date.now() / 1000) + 60 * 10
-        )
-      );
-      return { success: true, simulated: true };
-    }
-  } catch (err) {
-    console.log(`\u274c Unable to get quote for ${token}: ${err.message}`);
-    appendLog({ time: new Date().toISOString(), action: 'SKIP', token, reason: 'liquidity' });
-    return { success: false, reason: 'liquidity' };
+
+  const wethContract = new ethers.Contract(WETH_ADDRESS, erc20Abi, wallet);
+  const allowance = await wethContract.allowance(walletAddress, router.target);
+  const amountParsed = parseAmount(amountEth, 'WETH');
+
+  if (allowance === 0n) {
+    console.log(`🕒 [${localTime()}] 🟢 Approving WETH...`);
+    const approvalTx = await wethContract.approve(router.target, amountParsed);
+    await approvalTx.wait();
   }
-  try {
-    const amt = Number(amountEth).toFixed(6);
-    console.log(`[BUY] ${amt} WETH → ${token}`);
-    const gasEst = await withRetry(() => router.swapExactTokensForTokens.estimateGas(
-      parseAmount(amt, 'WETH'),
-      minOut,
-      swapPath,
-      walletAddress,
-      Math.floor(Date.now() / 1000) + 60 * 10
-    ));
-    console.log(`[GAS] Estimated ${Number(gasEst)} units`);
-    if (opts.dryRun || DRY_RUN) {
-      console.log('\u267B Dry run - transaction not sent');
-      appendLog({ time: new Date().toISOString(), action: 'DRY-BUY', token, amountEth: amt });
-      return { success: true, simulated: true };
-    }
-    const beforeBal = await getTokenBalance(tokenAddr, walletAddress, token);
-    const tx = await withRetry(() =>
-      router.swapExactTokensForTokens(
-        parseAmount(amt, 'WETH'),
-        minOut,
-        swapPath,
-        walletAddress,
-        Math.floor(Date.now() / 1000) + 60 * 10
-      )
-    );
-    const receipt = await tx.wait();
-    const afterBal = await getTokenBalance(tokenAddr, walletAddress, token);
-    const diff = afterBal - beforeBal;
-    let message;
-    let success = true;
-    const ethPrice = await getEthPrice();
-    let tokenValueUsd = 0;
-    try {
-      const expectedTokens = Number(ethers.formatUnits(expectedOut || 0n, getDecimals(token)));
-      const pricePerToken = expectedTokens ? (Number(amountEth) * (ethPrice || 0)) / expectedTokens : 0;
-      tokenValueUsd = diff * pricePerToken;
-    } catch {}
-    if (diff <= 0 || (diff < MIN_RECEIVE_TOKENS && tokenValueUsd < 1)) {
-      success = false;
-      message = `❌ Buy failed or too small`;
-    } else {
-      message = `✅ Bought ${diff.toFixed(2)} ${token} | TX: ${tx.hash}`;
-    }
-    console.log(message);
-    appendLog({ time: new Date().toISOString(), action: 'BUY', token, amountEth: amt, tx: tx.hash });
-    return { success, tx: tx.hash };
-  } catch (err) {
-    const hash = err.transactionHash || (err.transaction && err.transaction.hash);
-    logError(`Failed to trade WETH \u2192 ${token} | ${err.message} ${hash ? '|tx ' + hash : ''}`);
-    console.log(`❌ Swap failed for ${token}`);
-    return { success: false, reason: err.message };
+
+  console.log(`🕒 [${localTime()}] 🟢 Swapping WETH for ${token}...`);
+  const before = await getTokenBalance(tokenAddr, walletAddress, token);
+  const tx = await router.swapExactTokensForTokens(
+    amountParsed,
+    0,
+    [WETH_ADDRESS, tokenAddr],
+    walletAddress,
+    Math.floor(Date.now() / 1000) + 60 * 10
+  );
+  const receipt = await tx.wait();
+  console.log(`🕒 [${localTime()}] ✅ TX confirmed: ${tx.hash}`);
+
+  const after = await getTokenBalance(tokenAddr, walletAddress, token);
+  const received = after - before;
+  if (received <= 0) {
+    console.log(`🕒 [${localTime()}] ❌ Buy failed – no ${token} received`);
+    return { success: false, reason: 'no-tokens' };
   }
+
+  console.log(`🕒 [${localTime()}] ✅ Bought ${received.toFixed(2)} ${token}`);
+  appendLog({ time: new Date().toISOString(), action: 'BUY', token, amountEth: amountEth.toFixed(6), tx: tx.hash });
+  return { success: true, tx: tx.hash };
 }
 
 async function sell(amountToken, path, token, opts = {}) {
