@@ -337,8 +337,9 @@ async function sell(amountToken, path, token, opts = {}) {
     }
     const ethPrice = await getEthPrice();
     const wethOut = Number(ethers.formatEther(amounts[1]));
-    if (!usdPrice && ethPrice && wethOut * ethPrice < MIN_TRADE_USD) {
-      console.log(`[SKIP] ${token} sell amount $${(wethOut * ethPrice).toFixed(2)} is below $${MIN_TRADE_USD} limit`);
+    const tradeValueUsd = wethOut * (ethPrice || 0);
+    if (tradeValueUsd < MIN_TRADE_USD) {
+      console.log(`[SKIP] ${token} sell amount $${tradeValueUsd.toFixed(2)} is below $${MIN_TRADE_USD} limit`);
       return { success: false, reason: 'amount' };
     }
     minOut = amounts[1] * (10000n - SLIPPAGE_BPS) / 10000n;
