@@ -6,6 +6,7 @@ const config = require('./config');
 const TOKENS = require('./tokens');
 require('dotenv').config();
 const DRY_RUN = process.env.DRY_RUN === 'true';
+const MIN_TRADE_USD = 10;
 
 let cachedEthPrice = null;
 let lastEthFetch = 0;
@@ -29,6 +30,7 @@ async function getEthPrice() {
 const routerAbi = [
   'function swapExactETHForTokens(uint amountOutMin, address[] calldata path, address to, uint deadline) payable returns (uint[] memory amounts)',
   'function swapExactTokensForETH(uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline) returns (uint[] memory amounts)',
+  'function swapExactTokensForTokens(uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline) returns (uint[] memory amounts)',
   'function getAmountsOut(uint amountIn, address[] calldata path) external view returns (uint[] memory amounts)'
 ];
 
@@ -147,7 +149,7 @@ async function gasOkay() {
   return true;
 }
 
-async function validateLiquidity(tokenA, tokenB) {
+async function validateLiquidity(tokenA, tokenB, symbol) {
   try {
     const pairAddr = await withRetry(() => factory.getPair(tokenA, tokenB));
     if (pairAddr === ethers.ZeroAddress) {
@@ -164,8 +166,8 @@ async function validateLiquidity(tokenA, tokenB) {
     }
     const ethPrice = await getEthPrice();
     const wethAmt = Number(ethers.formatEther(r0));
-    if (ethPrice && wethAmt * ethPrice < 500) {
-      console.log(`\u274c Liquidity < $500`);
+    if (ethPrice && wethAmt * ethPrice < 50) {
+      console.log(`[LIQUIDITY] Skipped ${symbol}: liquidity < $50`);
       return false;
     }
     return true;
@@ -182,6 +184,11 @@ async function buy(amountEth, path, token, opts = {}) {
   }
   console.log(`\uD83D\uDD25 Buy ${token} at ${new Date().toISOString()}`);
   if (!await gasOkay()) return null;
+  const ethPrice = await getEthPrice();
+  if (ethPrice && amountEth * ethPrice < MIN_TRADE_USD) {
+    console.log(`[TRADE] Skipped ${token}: trade amount below $${MIN_TRADE_USD}`);
+    return null;
+  }
   const tokenAddr = TOKENS[token.toUpperCase()];
   if (!tokenAddr) {
     console.log("Token address is null, skipping trade.");
@@ -193,14 +200,14 @@ async function buy(amountEth, path, token, opts = {}) {
     console.log(`\u274c Not enough WETH for ${token}`);
     return null;
   }
-  if (!await validateLiquidity(WETH_ADDRESS, tokenAddr)) {
+  if (!await validateLiquidity(WETH_ADDRESS, tokenAddr, token)) {
     appendLog({ time: new Date().toISOString(), action: 'SKIP', token, reason: 'liquidity' });
     return null;
   }
   try {
     const amounts = await withRetry(() =>
       router.getAmountsOut(
-        parseAmount(amountEth, 'ETH'),
+        parseAmount(amountEth, 'WETH'),
         swapPath
       )
     );
@@ -211,12 +218,12 @@ async function buy(amountEth, path, token, opts = {}) {
     }
     if (opts.simulate || opts.dryRun || DRY_RUN) {
       await withRetry(() =>
-        router.swapExactETHForTokens.staticCall(
+        router.swapExactTokensForTokens.staticCall(
+          parseAmount(Number(amountEth).toFixed(6), 'WETH'),
           0,
           swapPath,
           walletAddress,
-          Math.floor(Date.now() / 1000) + 60 * 10,
-          { value: parseAmount(Number(amountEth).toFixed(6), 'ETH') }
+          Math.floor(Date.now() / 1000) + 60 * 10
         )
       );
     }
@@ -228,12 +235,12 @@ async function buy(amountEth, path, token, opts = {}) {
   try {
     const amt = Number(amountEth).toFixed(6);
     console.log(`[BUY] ${amt} WETH \u2192 ${token}`);
-    const gasEst = await withRetry(() => router.swapExactETHForTokens.estimateGas(
+    const gasEst = await withRetry(() => router.swapExactTokensForTokens.estimateGas(
+      parseAmount(amt, 'WETH'),
       0,
       swapPath,
       walletAddress,
-      Math.floor(Date.now() / 1000) + 60 * 10,
-      { value: parseAmount(amt, 'ETH') }
+      Math.floor(Date.now() / 1000) + 60 * 10
     ));
     console.log(`[GAS] Estimated ${Number(gasEst)} units`);
     if (opts.dryRun || DRY_RUN) {
@@ -242,12 +249,12 @@ async function buy(amountEth, path, token, opts = {}) {
       return null;
     }
     const tx = await withRetry(() =>
-      router.swapExactETHForTokens(
+      router.swapExactTokensForTokens(
+        parseAmount(amt, 'WETH'),
         0,
         swapPath,
         walletAddress,
-        Math.floor(Date.now() / 1000) + 60 * 10,
-        { value: parseAmount(amt, 'ETH') }
+        Math.floor(Date.now() / 1000) + 60 * 10
       )
     );
     const receipt = await tx.wait();
@@ -255,7 +262,7 @@ async function buy(amountEth, path, token, opts = {}) {
     return receipt;
   } catch (err) {
     const hash = err.transactionHash || (err.transaction && err.transaction.hash);
-    logError(`Failed to trade ETH \u2192 ${token} | ${err.message} ${hash ? '| tx ' + hash : ''}`);
+    logError(`Failed to trade WETH \u2192 ${token} | ${err.message} ${hash ? '| tx ' + hash : ''}`);
     throw err;
   }
 }
@@ -277,7 +284,7 @@ async function sell(amountToken, path, token, opts = {}) {
     console.log(`\u274c Not enough ${token} to sell`);
     return null;
   }
-  if (!await validateLiquidity(tokenAddr, WETH_ADDRESS)) {
+  if (!await validateLiquidity(tokenAddr, WETH_ADDRESS, token)) {
     appendLog({ time: new Date().toISOString(), action: 'SKIP', token, reason: 'liquidity' });
     return null;
   }
@@ -293,9 +300,15 @@ async function sell(amountToken, path, token, opts = {}) {
       appendLog({ time: new Date().toISOString(), action: 'SKIP', token, reason: 'liquidity' });
       return null;
     }
+    const ethPrice = await getEthPrice();
+    const wethOut = Number(ethers.formatEther(amounts[1]));
+    if (ethPrice && wethOut * ethPrice < MIN_TRADE_USD) {
+      console.log(`[TRADE] Skipped ${token}: trade amount below $${MIN_TRADE_USD}`);
+      return null;
+    }
     if (opts.simulate || opts.dryRun || DRY_RUN) {
       await withRetry(() =>
-        router.swapExactTokensForETH.staticCall(
+        router.swapExactTokensForTokens.staticCall(
           parseAmount(Number(amountToken).toFixed(6), token),
           0,
           swapPath,
@@ -312,7 +325,7 @@ async function sell(amountToken, path, token, opts = {}) {
   try {
     const amt = Number(amountToken).toFixed(6);
     console.log(`[SELL] ${token} \u2192 WETH`);
-    const gasEst = await withRetry(() => router.swapExactTokensForETH.estimateGas(
+    const gasEst = await withRetry(() => router.swapExactTokensForTokens.estimateGas(
       parseAmount(amt, token),
       0,
       swapPath,
@@ -326,7 +339,7 @@ async function sell(amountToken, path, token, opts = {}) {
       return null;
     }
     const tx = await withRetry(() =>
-      router.swapExactTokensForETH(
+      router.swapExactTokensForTokens(
         parseAmount(amt, token),
         0,
         swapPath,
@@ -339,14 +352,13 @@ async function sell(amountToken, path, token, opts = {}) {
     return receipt;
   } catch (err) {
     const hash = err.transactionHash || (err.transaction && err.transaction.hash);
-    logError(`Failed to trade ${token} \u2192 ETH | ${err.message} ${hash ? '| tx ' + hash : ''}`);
+    logError(`Failed to trade ${token} \u2192 WETH | ${err.message} ${hash ? '| tx ' + hash : ''}`);
     throw err;
   }
 }
 
-async function getEthBalance() {
-  const bal = await provider.getBalance(walletAddress);
-  return Number(ethers.formatEther(bal));
+async function getWethBalance() {
+  return getTokenBalance(WETH_ADDRESS, walletAddress, 'WETH');
 }
 
-module.exports = { buy, sell, getEthBalance };
+module.exports = { buy, sell, getWethBalance };
