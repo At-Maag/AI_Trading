@@ -46,5 +46,5 @@ async function getPrices() {
   }
 }
 
-module.exports = { getPrices };
+module.exports = { getPrices, ID_MAP };
 
