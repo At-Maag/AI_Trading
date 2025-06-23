@@ -291,13 +291,12 @@ async function buy(amountEth, path, token, opts = {}) {
       )
     );
     const receipt = await tx.wait();
-    console.log(`✅ Buy TX sent: ${tx.hash}`);
     const afterBal = await getTokenBalance(tokenAddr, walletAddress, token);
     const diff = afterBal - beforeBal;
     if (diff > 0) {
-      console.log(`🎉 Bought ${diff.toFixed(2)} ${token} successfully`);
+      console.log(`✅ Bought ${diff.toFixed(2)} ${token} | TX: ${tx.hash}`);
     } else {
-      console.log(`❌ No ${token} received`);
+      console.log(`❌ Buy failed – no ${token} received`);
     }
     appendLog({ time: new Date().toISOString(), action: 'BUY', token, amountEth: amt, tx: tx.hash });
     return { success: true, tx: tx.hash };
