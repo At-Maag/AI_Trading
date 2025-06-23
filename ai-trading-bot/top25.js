@@ -101,10 +101,26 @@ async function getValidTokens() {
     const valid = [];
     for (const t of tokens) {
       const res = await validateToken(t, ethPrice);
-      if (res) {
+      if (res && !valid.includes(res)) {
         valid.push(res);
       }
     }
+
+    // If fewer than 25 tokens were found, supplement from the
+    // statically configured list in tokens.js. This ensures the bot
+    // always has a broad set of assets even when the CoinGecko API
+    // does not return enough tradable tokens.
+    if (valid.length < 25) {
+      for (const symbol of Object.keys(TOKENS)) {
+        if (symbol === 'WETH' || valid.includes(symbol)) continue;
+        const res = await validateToken({ symbol }, ethPrice);
+        if (res && !valid.includes(res)) {
+          valid.push(res);
+        }
+        if (valid.length >= 25) break;
+      }
+    }
+
     if (valid.length) {
       cachedTokens = valid;
       lastFetched = Date.now();
