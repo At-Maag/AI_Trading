@@ -311,7 +311,8 @@ async function evaluate(prices, wethBal, ethPrice) {
     // console.log(`[${ts}] Scanning ${index + 1}/${totalScans}: ${symbol}`);
     const price = prices[symbol.toLowerCase()];
     if (!price) {
-      if (config.debugTokens) console.log(`❌ Price missing for ${symbol}`);
+      console.log(`⚠️ No price data for ${symbol}`);
+      res.push({ symbol, price: 0, score: 0, signals: [], closing: [] });
       continue;
     }
     if (!history[symbol]) history[symbol] = [];
@@ -320,6 +321,9 @@ async function evaluate(prices, wethBal, ethPrice) {
     const closing = history[symbol];
     const { score, signals } = strategy.score(closing);
     lastScores[symbol] = score;
+    if (score === 0) {
+      console.log(`Skipping ${symbol}: score = 0`);
+    }
     if (config.debugTokens) {
       console.log(`💡 TOKEN LOOP: ${symbol}, score: ${score}`);
     }
@@ -348,7 +352,7 @@ async function checkTrades(entries, ethPrice, isTop) {
   }
 
     if (score < (config.signalThreshold || 2) && !process.env.AGGRESSIVE) {
-      if (config.debugTokens) console.log(`⚠️ No trade signal for ${symbol}`);
+      console.log(`Skipping ${symbol}: score = ${score}`);
       continue;
     }
 

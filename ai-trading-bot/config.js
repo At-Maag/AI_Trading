@@ -20,5 +20,10 @@ module.exports = {
   cacheHours: 24,
   tokenCount: 50,
   debugTokens: false,
-  signalThreshold: 2
+  signalThreshold: 2,
+  aggressive: true
 };
+
+if (!process.env.AGGRESSIVE) {
+  process.env.AGGRESSIVE = 'true';
+}

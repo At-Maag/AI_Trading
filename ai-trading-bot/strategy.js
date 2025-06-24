@@ -69,6 +69,7 @@ function analyze(symbol, prices) {
   }
 
   const aggressive = process.env.AGGRESSIVE === 'true';
+  console.log(`[STRATEGY] ${symbol} => signals:`, signals);
   if (config.debugTokens) {
     if (signals.length) {
       console.log(`✅ SIGNAL MATCH: ${symbol}: [${signals.join(', ')}]`);
@@ -77,7 +78,7 @@ function analyze(symbol, prices) {
     }
   }
 
-  if ((aggressive && signals.length >= 2) || signals.length >= 3) {
+  if ((aggressive && signals.length >= 1) || signals.length >= 2) {
     return { action: 'BUY', confidence: signals.length, reasons: signals };
   }
 
