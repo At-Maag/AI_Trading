@@ -2,7 +2,7 @@ const axios = require('axios');
 const { getAddress } = require('ethers');
 
 const TOKEN_LIST_URL =
-  'https://raw.githubusercontent.com/OffchainLabs/arbitrum-token-lists/main/arbed_uniswap_labs.json';
+  'https://raw.githubusercontent.com/SmolData/tokenlists/main/arbitrum-tokenlist.json';
 
 // Minimal fallback list for offline or failed fetch scenarios
 const FALLBACK_TOKENS = {
@@ -22,7 +22,7 @@ async function load() {
     const { data } = await axios.get(TOKEN_LIST_URL, { timeout: 15000 });
     if (data && Array.isArray(data.tokens)) {
       let count = 0;
-      for (const token of data.tokens.slice(0, 200)) {
+      for (const token of data.tokens.slice(0, 250)) {
         if (!token.symbol || !token.address) continue;
         try {
           const addr = getAddress(token.address);
@@ -38,7 +38,7 @@ async function load() {
       }
     }
   } catch (err) {
-    console.error(`\u274c Failed to fetch token list: ${err.message}`);
+    // Silently ignore fetch errors and fall back
   }
   if (!Object.keys(TOKENS).length) {
     console.warn('\u26A0\uFE0F Using fallback token list');
