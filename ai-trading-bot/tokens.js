@@ -59,7 +59,7 @@ const TOKENS = {
   COW:   safeGetAddress('0xDAe6C1D1aC5D68e1F7Cc1C6F2f1531eF5bD2C6CB', 'COW')
 };
 
-const FALLBACK_TOKENS = TOKENS;
+const FALLBACK_TOKENS = { ...TOKENS };
 
 async function load() {
   return TOKENS;

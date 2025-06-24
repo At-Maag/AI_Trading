@@ -27,6 +27,19 @@ const BASIC_FALLBACK = [
 const provider = new ethers.JsonRpcProvider('https://arb1.arbitrum.io/rpc');
 const CACHE_FILE = path.join(__dirname, '..', 'data', 'tokens.json');
 
+function withRetry(fn, retries = 2) {
+  return (async () => {
+    for (let i = 0; i < retries; i++) {
+      try {
+        return await fn();
+      } catch (err) {
+        if (i === retries - 1) throw err;
+        await new Promise(res => setTimeout(res, 500));
+      }
+    }
+  })();
+}
+
 let cachedTokens = [];
 let lastFetched = 0;
 let cacheLoaded = false;
@@ -108,10 +121,16 @@ async function validateToken(token, ethPrice) {
   if (!weth) return null;
 
   try {
-    const hasLiquidity = await trade.validateLiquidity(weth, checksummed, token.symbol);
+    const hasLiquidity = await withRetry(
+      () => trade.validateLiquidity(weth, checksummed, token.symbol),
+      2
+    );
     if (!hasLiquidity) return null;
 
-    const price = await trade.getTokenUsdPrice(token.symbol);
+    const price = await withRetry(
+      () => trade.getTokenUsdPrice(token.symbol),
+      2
+    );
     if (!price) return null;
 
     TOKENS[token.symbol.toUpperCase()] = checksummed;
@@ -149,14 +168,19 @@ async function getValidTokens(forceRefresh = false) {
     const count = config.tokenCount || 50;
     if (valid.length >= count) {
       cachedTokens = valid.slice(0, count);
+    } else if (valid.length >= 10) {
+      cachedTokens = valid;
     } else {
-      console.log('❌ Fallback triggered: using static token list');
+      console.log('⚠️ Using fallback static tokens: ' + FALLBACK_LIST.length + ' loaded');
       const staticList = TOKENS.getValidTokens?.() || FALLBACK_LIST;
       cachedTokens = staticList.map(t => ({ symbol: t.symbol, address: t.address, score: 0 }));
     }
 
     lastFetched = Date.now();
     saveCache(cachedTokens);
+    if (config.debugTokens) {
+      console.log('Tokens:', cachedTokens.map(t => t.symbol).join(', '));
+    }
     console.log('✅ Using new token list');
     return [...cachedTokens];
   } catch (err) {
@@ -165,7 +189,10 @@ async function getValidTokens(forceRefresh = false) {
     cachedTokens = staticList.map(t => ({ symbol: t.symbol, address: t.address, score: 0 }));
     lastFetched = Date.now();
     saveCache(cachedTokens);
-    console.log('✅ Using fallback token list');
+    if (config.debugTokens) {
+      console.log('Tokens:', cachedTokens.map(t => t.symbol).join(', '));
+    }
+    console.log('⚠️ Using fallback static tokens: ' + cachedTokens.length + ' loaded');
     return [...cachedTokens];
   }
 }
