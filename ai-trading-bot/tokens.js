@@ -20,6 +20,18 @@ const TOKENS = {
   WBTC: safeGetAddress('0x2f2a2543b76a4166549f7aaab2e75b3b36adf4c0', 'WBTC'),
   USDC: safeGetAddress('0xaf88d065e77c8cC2239327C5EDb3A432268e5831', 'USDC'),
   USDT: safeGetAddress('0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9', 'USDT'),
+  ARB:   safeGetAddress('0x912CE59144191C1204E64559FE8253a0e49E6548', 'ARB'),
+  MATIC: safeGetAddress('0xeadD5e4720d92C17c0A7f0d2f3E9eC1e054f9C6A', 'MATIC'),
+  CRV:   safeGetAddress('0x498A17C58E2C1A1D16c0c931D6a523e1B16eBf3f', 'CRV'),
+  BAL:   safeGetAddress('0x040d1edc9569d4bab2d15287dc5a4f10f56a56b8', 'BAL'),
+  SNX:   safeGetAddress('0x34dEbEF4e420dF21c1c4b7E627e4c197bD9F7A01', 'SNX'),
+  LDO:   safeGetAddress('0xDae6C2A48bfaa0b4c6e580419b6dC7861A01377B', 'LDO'),
+  SUSHI: safeGetAddress('0x6c3f90f043a72fa612cbac8115ee7e52bde6e490', 'SUSHI'),
+  AAVE:  safeGetAddress('0x078f358208685046a11C85e8ad32895DED33A249', 'AAVE'),
+  COMP:  safeGetAddress('0x354A6dA3fcde098F8389cad84b0182725c6C91dE', 'COMP'),
+  BAND:  safeGetAddress('0x0d9c36109c8ef5d8ee093c9ebfa2b8b5b83e0766', 'BAND'),
+  AMPL:  safeGetAddress('0x43b4fdfd4ff969587185cdb6f0bd875c5fc83f8c', 'AMPL'),
+  REN:   safeGetAddress('0x5c2ed810328349100A66B82b78a1791B101C9D61', 'REN'),
 };
 
 Object.entries(TOKENS).forEach(([symbol, addr]) => {
