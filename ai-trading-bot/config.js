@@ -1,7 +1,7 @@
 module.exports = {
   SLIPPAGE: 0.01, // 1% slippage tolerance
   // Start with a minimal list. Additional tokens are loaded dynamically
-  // from the CoinGecko API at runtime via top25.js
+  // from on-chain data at runtime via top25.js
   coins: [
     // Use WETH exclusively as the base asset
     'WETH'

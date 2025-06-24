@@ -1,10 +1,8 @@
 const { ethers, getAddress } = require('ethers');
-const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 const config = require('./config');
 const TOKENS = require('./tokens');
-const { ID_MAP } = require('./datafeeds');
 require('dotenv').config();
 const DRY_RUN = process.env.DRY_RUN === 'true';
 const DEBUG_PAIRS = process.env.DEBUG_PAIRS === 'true';
@@ -46,14 +44,17 @@ async function getEthPrice() {
 }
 
 async function getTokenUsdPrice(symbol) {
-  const id = ID_MAP[symbol.toUpperCase()];
-  if (!id) return null;
+  const tokenAddr = TOKENS[symbol.toUpperCase()];
+  if (!tokenAddr) return null;
   try {
-    const { data } = await axios.get(
-      'https://api.coingecko.com/api/v3/simple/price',
-      { params: { ids: id, vs_currencies: 'usd' }, timeout: 10000 }
+    const amounts = await router.getAmountsOut(
+      parseAmount(1, symbol),
+      [tokenAddr, getWethAddress()]
     );
-    return data[id]?.usd || null;
+    if (!amounts || !amounts[1]) return null;
+    const ethPrice = await getEthPrice();
+    const ethOut = Number(ethers.formatEther(amounts[1]));
+    return ethOut * (ethPrice || 0);
   } catch (err) {
     console.warn(`\u274c ${symbol} price fetch failed: ${err.message}`);
     return null;
