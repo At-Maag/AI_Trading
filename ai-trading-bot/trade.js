@@ -176,8 +176,14 @@ async function ensureAllowance(tokenAddr, symbol, amount) {
 }
 
 async function swapExactTokenForToken({ inputToken, outputToken, amountIn, slippage }) {
-  const inAddr = TOKENS[inputToken.toUpperCase()];
+  let inAddr = TOKENS[inputToken.toUpperCase()];
+  if (!inAddr && TOKENS.getTokenAddress) {
+    inAddr = await TOKENS.getTokenAddress(inputToken);
+  }
   let outAddr = TOKENS[outputToken.toUpperCase()];
+  if (!outAddr && TOKENS.getTokenAddress) {
+    outAddr = await TOKENS.getTokenAddress(outputToken);
+  }
   if (outputToken === 'ETH') outAddr = WETH_ADDRESS;
   if (!inAddr || !outAddr) throw new Error('Invalid token symbol');
   const amountParsed = parseAmount(amountIn, inputToken);
@@ -238,6 +244,9 @@ async function gasOkay() {
 }
 
 async function getPairAddress(tokenA, tokenB) {
+  if (DEBUG_PAIRS) {
+    console.log(`[PAIR] Searching pair for ${tokenA} ${tokenB}`);
+  }
   for (const fee of FEE_TIERS) {
     try {
       const pool = await withRetry(() => v3Factory.getPool(tokenA, tokenB, fee));
@@ -274,7 +283,14 @@ async function getPairAddress(tokenA, tokenB) {
 
 async function validateLiquidity(tokenA, tokenB, symbol) {
   try {
-    const { address: pairAddr, version } = await getPairAddress(tokenA, tokenB);
+    let { address: pairAddr, version } = await getPairAddress(tokenA, tokenB);
+    if (pairAddr === ethers.ZeroAddress && TOKENS.USDC) {
+      if (DEBUG_PAIRS) {
+        console.log(`[PAIR] Retrying with USDC pair for ${symbol}`);
+      }
+      tokenA = TOKENS.USDC;
+      ({ address: pairAddr, version } = await getPairAddress(tokenA, tokenB));
+    }
     if (pairAddr === ethers.ZeroAddress) {
       console.log(`\u274c No Uniswap pair found`);
       return false;
@@ -300,8 +316,16 @@ async function validateLiquidity(tokenA, tokenB, symbol) {
       return false;
     }
     const ethPrice = await getEthPrice();
-    const wethAmt = Number(ethers.formatEther(reserve));
-    if (ethPrice && wethAmt * ethPrice < 50) {
+    let liquidityUsd;
+    if (tokenA.toLowerCase() === WETH_ADDRESS.toLowerCase()) {
+      const wethAmt = Number(ethers.formatEther(reserve));
+      liquidityUsd = ethPrice ? wethAmt * ethPrice : 0;
+    } else if (TOKENS.USDC && tokenA.toLowerCase() === TOKENS.USDC.toLowerCase()) {
+      liquidityUsd = Number(ethers.formatUnits(reserve, 6));
+    } else {
+      liquidityUsd = Number(ethers.formatEther(reserve));
+    }
+    if (liquidityUsd < 50) {
       console.log(`[LIQUIDITY] Skipped ${symbol}: liquidity < $50`);
       return false;
     }
@@ -320,10 +344,16 @@ async function buy(token, opts = {}) {
 
   if (!await gasOkay()) return { success: false, reason: 'gas' };
 
-  const tokenAddr = TOKENS[token.toUpperCase()];
+  let tokenAddr = TOKENS[token.toUpperCase()];
+  if (!tokenAddr && TOKENS.getTokenAddress) {
+    tokenAddr = await TOKENS.getTokenAddress(token);
+  }
   if (!tokenAddr) {
     console.log('Token address is null, skipping trade.');
     return { success: false, reason: 'no-address' };
+  }
+  if (DEBUG_PAIRS) {
+    console.log(`[ADDR] ${token} -> ${tokenAddr}`);
   }
 
   const wethBal = await getTokenBalance(WETH_ADDRESS, walletAddress, 'WETH');

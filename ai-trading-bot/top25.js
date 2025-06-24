@@ -37,6 +37,9 @@ async function validateToken(token, ethPrice) {
     // Fall back to a statically configured address if available
     address = TOKENS[token.symbol.toUpperCase()];
   }
+  if (!address && TOKENS.getTokenAddress) {
+    address = await TOKENS.getTokenAddress(token.symbol);
+  }
   if (!address) {
     try {
       // Attempt ENS lookup as a last resort

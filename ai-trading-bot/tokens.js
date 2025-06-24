@@ -7,6 +7,11 @@
 
 // Ethers v6 exposes utilities directly from the main entry point.
 const { getAddress } = require('ethers');
+const axios = require('axios');
+const { ID_MAP } = require('./datafeeds');
+
+// Prefer Arbitrum addresses but fall back to Ethereum mainnet if not present
+const PLATFORM_KEY = 'arbitrum-one';
 
 function safeGetAddress(addr, symbol) {
   try {
@@ -28,6 +33,8 @@ const TOKENS = {
   ARB: safeGetAddress('0x912ce59144191c1204e64559fe8253a0e49e6548', 'ARB'),
   MATIC: safeGetAddress('0x7d1afa7b718fb893db30a3abc0cfc608aacfebb0', 'MATIC'),
   MKR: safeGetAddress('0x9f8f72aa9304c8b593d555f12ef6589cc3a579a2', 'MKR'),
+  USDC: safeGetAddress('0xff970a61a04b1ca14834a43f5de4533ebddb5cc8', 'USDC'),
+  USDT: safeGetAddress('0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9', 'USDT'),
   CRV: safeGetAddress('0xd533a949740bb3306d119cc777fa900ba034cd52', 'CRV'),
   GRT: safeGetAddress('0xc944e90c64b2c07662a292be6244bdf05cda44a7', 'GRT'),
   ENS: safeGetAddress('0xc18360217d8f7ab5e5edd226be63ede2a818f5e9', 'ENS'),
@@ -49,6 +56,34 @@ const TOKENS = {
   STORJ: safeGetAddress('0xb64ef51c888972c908cfacf59b47c1afbc0ab8ac', 'STORJ'),
 };
 
+async function fetchAddress(symbol) {
+  const id = ID_MAP[symbol.toUpperCase()];
+  if (!id) return null;
+  try {
+    const { data } = await axios.get(
+      `https://api.coingecko.com/api/v3/coins/${id}`,
+      { timeout: 10000 }
+    );
+    const addr = data?.platforms?.[PLATFORM_KEY] || data?.platforms?.ethereum;
+    if (addr) return getAddress(addr);
+  } catch (err) {
+    console.warn(`\u26A0\uFE0F Address lookup failed for ${symbol}: ${err.message}`);
+  }
+  return null;
+}
+
+async function getTokenAddress(symbol) {
+  symbol = symbol.toUpperCase();
+  if (TOKENS[symbol]) return TOKENS[symbol];
+  const addr = await fetchAddress(symbol);
+  if (addr) {
+    TOKENS[symbol] = addr;
+    console.log(`\u2705 Loaded ${symbol} via CoinGecko`);
+    return addr;
+  }
+  return null;
+}
+
 Object.entries(TOKENS).forEach(([symbol, addr]) => {
   if (!addr) {
     delete TOKENS[symbol];
@@ -68,5 +103,6 @@ Object.entries(TOKENS).forEach(([symbol, addr]) => {
 // a component passes 'ETH' or 'BTC' instead of their wrapped equivalents.
 TOKENS.ETH = TOKENS.WETH;
 TOKENS.BTC = TOKENS.WBTC;
+TOKENS.getTokenAddress = getTokenAddress;
 
 module.exports = TOKENS;
