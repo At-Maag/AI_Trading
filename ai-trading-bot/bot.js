@@ -232,27 +232,19 @@ function renderSummary(list, wethBal = 0, ethPrice = 0) {
   const pnlColored = color(`${formatUsd(pnlUsd)} (${pnlPct.toFixed(2)}%)`, pnlUsd >= 0 ? 'green' : 'red');
   const wethValue = wethBal * (ethPrice || 0);
   process.stdout.write('\x1Bc');
-  if (config.prettyLogs) {
-    console.log(`[${ts}] [Scan ${fullScanCount}/14] ${color('=== ♦ TOP 5 COINS ===', 'magenta')}  [${coins.length - 1} Tokens] [WETH ${wethBal.toFixed(2)} (${formatUsd(wethValue)}) | PnL: ${pnlColored}]`);
-    const rows = top.map(r => {
-      const entry = risk.getEntry(r.symbol);
-      const pnl = entry ? (((r.price - entry) / entry) * 100).toFixed(2) + '%' : '-';
-      return [
-        r.symbol,
-        `$${r.price.toFixed(2)}`,
-        String(r.score),
-        pnl,
-        r.signals.join(', ') || '-'
-      ];
-    });
-    console.log(formatTable(rows, ['Symbol', 'Price', 'Score', 'PnL', 'Matched Signals']));
-  } else {
-    console.log(`[${ts}] [Scan ${fullScanCount}/14] TOP 5: ` + top.map(r => `${r.symbol}:${r.score}`).join(' '));
-  }
-  const others = list.slice(5).map(r => r.symbol).join(', ');
-  if (others) {
-    console.log(color('Other coins: ' + others, 'gray'));
-  }
+  console.log(`[${ts}] [Scan ${fullScanCount}/14] ${color('=== ♦ TOP 5 COINS ===', 'magenta')}  [${coins.length - 1} Tokens] [WETH ${wethBal.toFixed(2)} (${formatUsd(wethValue)}) | PnL: ${pnlColored}]`);
+  const rows = top.map(r => {
+    const entry = risk.getEntry(r.symbol);
+    const pnl = entry ? (((r.price - entry) / entry) * 100).toFixed(2) + '%' : '-';
+    return [
+      r.symbol,
+      `$${r.price.toFixed(2)}`,
+      String(r.score),
+      pnl,
+      r.signals.join(', ') || '-'
+    ];
+  });
+  console.log(formatTable(rows, ['Symbol', 'Price', 'Score', 'PnL', 'Matched Signals']));
 }
 
 

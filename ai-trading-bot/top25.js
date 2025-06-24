@@ -171,7 +171,7 @@ async function getValidTokens(forceRefresh = false) {
     } else if (valid.length >= 10) {
       cachedTokens = valid;
     } else {
-      console.log('⚠️ Using fallback static tokens: ' + FALLBACK_LIST.length + ' loaded');
+      console.log('⚠️ Using static token list (fallback)');
       const staticList = TOKENS.getValidTokens?.() || FALLBACK_LIST;
       cachedTokens = staticList.map(t => ({ symbol: t.symbol, address: t.address, score: 0 }));
     }
@@ -192,7 +192,7 @@ async function getValidTokens(forceRefresh = false) {
     if (config.debugTokens) {
       console.log('Tokens:', cachedTokens.map(t => t.symbol).join(', '));
     }
-    console.log('⚠️ Using fallback static tokens: ' + cachedTokens.length + ' loaded');
+    console.log('⚠️ Using static token list (fallback)');
     return [...cachedTokens];
   }
 }
