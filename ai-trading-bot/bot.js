@@ -300,6 +300,41 @@ function renderHoldings(list) {
   console.log(formatTable(rows, ['#', 'Symbol', 'Price', 'Qty', 'PnL']));
 }
 
+async function runTokenTests() {
+  const cache = path.join(__dirname, '..', 'data', 'tokens.json');
+  let tokens;
+  try {
+    tokens = JSON.parse(fs.readFileSync(cache));
+  } catch {
+    console.log('⚠️ No cached tokens to validate');
+    return;
+  }
+  let success = 0;
+  const failures = [];
+  for (const t of tokens) {
+    let addr;
+    try {
+      addr = getAddress(t.address);
+    } catch {
+      failures.push(`${t.symbol} failed (invalid address)`);
+      continue;
+    }
+    const liq = await trade.validateLiquidity(TOKENS.WETH, addr, t.symbol);
+    if (!liq) {
+      failures.push(`${t.symbol} failed (no liquidity)`);
+      continue;
+    }
+    const price = await trade.getTokenUsdPrice(t.symbol);
+    if (!price) {
+      failures.push(`${t.symbol} failed (price fetch failed)`);
+      continue;
+    }
+    success++;
+  }
+  console.log(`✅ ${success}/${tokens.length} tokens validated successfully.`);
+  failures.forEach(f => console.log(`❌ ${f}`));
+}
+
 
 async function evaluate(prices, wethBal, ethPrice) {
   const res = [];
@@ -483,7 +518,8 @@ async function loop() {
 async function main() {
   console.log(`🚀 Bot started at ${localTime()}.`);
   await TOKENS.load();
-  refreshTokenList(true, FORCE_REFRESH).catch(logError);
+  await refreshTokenList(true, FORCE_REFRESH).catch(logError);
+  await runTokenTests();
   setInterval(() => {
     refreshTokenList().catch(logError);
   }, 60 * 60 * 1000);
