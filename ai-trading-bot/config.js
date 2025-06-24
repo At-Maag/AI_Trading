@@ -16,5 +16,6 @@ module.exports = {
   TRAILING_STOP: 0.02,
   GAS_LIMIT_GWEI: 80,
   TRADE_ALLOCATION: 0.15,
-  prettyLogs: true
+  prettyLogs: true,
+  cacheHours: 24
 };
