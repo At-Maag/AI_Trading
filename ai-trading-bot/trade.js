@@ -121,7 +121,9 @@ const FEE_TIERS = [500, 3000, 10000]; // 0.05%, 0.3%, 1%
 const factoryAddress = getAddress('0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f');
 const factory = new ethers.Contract(factoryAddress, factoryAbi, provider);
 
-const WETH_ADDRESS = TOKENS.WETH;
+function getWethAddress() {
+  return TOKENS.WETH;
+}
 const SLIPPAGE_BPS = BigInt(Math.round((config.SLIPPAGE || 0.01) * 10000));
 
 // Decimal definitions for tokens. Default to 18, fallback to 6 if unknown
@@ -184,7 +186,7 @@ async function swapExactTokenForToken({ inputToken, outputToken, amountIn, slipp
   if (!outAddr && TOKENS.getTokenAddress) {
     outAddr = await TOKENS.getTokenAddress(outputToken);
   }
-  if (outputToken === 'ETH') outAddr = WETH_ADDRESS;
+  if (outputToken === 'ETH') outAddr = getWethAddress();
   if (!inAddr || !outAddr) throw new Error('Invalid token symbol');
   const amountParsed = parseAmount(amountIn, inputToken);
   await ensureAllowance(inAddr, inputToken, amountParsed);
@@ -317,7 +319,7 @@ async function validateLiquidity(tokenA, tokenB, symbol) {
     }
     const ethPrice = await getEthPrice();
     let liquidityUsd;
-    if (tokenA.toLowerCase() === WETH_ADDRESS.toLowerCase()) {
+    if (tokenA.toLowerCase() === getWethAddress().toLowerCase()) {
       const wethAmt = Number(ethers.formatEther(reserve));
       liquidityUsd = ethPrice ? wethAmt * ethPrice : 0;
     } else if (TOKENS.USDC && tokenA.toLowerCase() === TOKENS.USDC.toLowerCase()) {
@@ -361,7 +363,7 @@ async function buy(token, opts = {}) {
     console.log(`[ADDR] ${token} -> ${tokenAddr}`);
   }
 
-  const wethBal = await getTokenBalance(WETH_ADDRESS, walletAddress, 'WETH');
+  const wethBal = await getTokenBalance(getWethAddress(), walletAddress, 'WETH');
   if (wethBal < MIN_WETH_BAL) {
     console.log(`🕒 [${localTime()}] ⚠️ Not enough WETH to trade`);
     return { success: false, reason: 'balance' };
@@ -374,12 +376,12 @@ async function buy(token, opts = {}) {
     return { success: false, reason: 'amount' };
   }
 
-  if (!await validateLiquidity(WETH_ADDRESS, tokenAddr, token)) {
+  if (!await validateLiquidity(getWethAddress(), tokenAddr, token)) {
     appendLog({ time: new Date().toISOString(), action: 'SKIP', token, reason: 'liquidity' });
     return { success: false, reason: 'liquidity' };
   }
 
-  const wethContract = new ethers.Contract(WETH_ADDRESS, erc20Abi, wallet);
+  const wethContract = new ethers.Contract(getWethAddress(), erc20Abi, wallet);
   const allowance = await wethContract.allowance(walletAddress, router.target);
   const amountParsed = parseAmount(amountEth, 'WETH');
 
@@ -392,7 +394,7 @@ async function buy(token, opts = {}) {
   console.log(`🕒 [${localTime()}] 🟢 Swapping WETH for ${token}...`);
   const before = await getTokenBalance(tokenAddr, walletAddress, token);
   const params = {
-    tokenIn: WETH_ADDRESS,
+    tokenIn: getWethAddress(),
     tokenOut: tokenAddr,
     fee: 3000,
     recipient: walletAddress,
@@ -430,7 +432,7 @@ async function sell(amountToken, path, token, opts = {}) {
     console.log("Token address is null, skipping trade.");
     return { success: false, reason: 'no-address' };
   }
-  const swapPath = [tokenAddr, WETH_ADDRESS];
+  const swapPath = [tokenAddr, getWethAddress()];
   const bal = await getTokenBalance(tokenAddr, walletAddress, token);
   if (bal <= 0) {
     console.log(`❌ No ${token} to sell`);
@@ -440,7 +442,7 @@ async function sell(amountToken, path, token, opts = {}) {
     console.log(`❌ Not enough ${token} to sell`);
     return { success: false, reason: 'balance' };
   }
-  if (!await validateLiquidity(tokenAddr, WETH_ADDRESS, token)) {
+  if (!await validateLiquidity(tokenAddr, getWethAddress(), token)) {
     appendLog({ time: new Date().toISOString(), action: 'SKIP', token, reason: 'liquidity' });
     return { success: false, reason: 'liquidity' };
   }
@@ -505,7 +507,7 @@ async function sell(amountToken, path, token, opts = {}) {
       appendLog({ time: new Date().toISOString(), action: 'DRY-SELL', token, amountToken: amt });
       return { success: true, simulated: true };
     }
-    const beforeWeth = await getTokenBalance(WETH_ADDRESS, walletAddress, 'WETH');
+    const beforeWeth = await getTokenBalance(getWethAddress(), walletAddress, 'WETH');
     const tx = await withRetry(() =>
       router.swapExactTokensForTokens(
         parseAmount(amt, token),
@@ -516,7 +518,7 @@ async function sell(amountToken, path, token, opts = {}) {
       )
     );
     const receipt = await tx.wait();
-    const afterWeth = await getTokenBalance(WETH_ADDRESS, walletAddress, 'WETH');
+    const afterWeth = await getTokenBalance(getWethAddress(), walletAddress, 'WETH');
     const earned = afterWeth - beforeWeth;
     console.log(`✅ Sold ${token} for ${earned.toFixed(4)} WETH`);
     const sellNow = new Date().toLocaleTimeString('en-US', { hour12: true, timeZone: 'America/Los_Angeles' });
@@ -577,7 +579,7 @@ async function sellToken(token) {
 }
 
 async function getWethBalance() {
-  return getTokenBalance(WETH_ADDRESS, walletAddress, 'WETH');
+  return getTokenBalance(getWethAddress(), walletAddress, 'WETH');
 }
 
 async function autoWrapOrUnwrap() {
