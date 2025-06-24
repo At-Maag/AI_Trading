@@ -98,6 +98,7 @@ async function getValidTokens() {
       const res = await validateToken(token, ethPrice);
       if (res) valid.push(res);
     }
+    console.log(`\u2705 Validated ${valid.length} tokens`);
 
     valid.sort((a, b) => b.score - a.score);
 
@@ -105,7 +106,6 @@ async function getValidTokens() {
       cachedTokens = valid;
       lastFetched = Date.now();
     }
-    console.log(`\u2705 Validated ${valid.length} tokens`);
     return [...cachedTokens];
   } catch (err) {
     // Silently return cached results on failure
