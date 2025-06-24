@@ -413,6 +413,8 @@ async function buy(token, opts = {}) {
   }
 
   console.log(`🕒 [${localTime()}] ✅ Bought ${received.toFixed(2)} ${token}`);
+  const buyTime = new Date().toLocaleTimeString('en-US', { hour12: true, timeZone: 'America/Los_Angeles' });
+  console.log(`[BUY] ${token} for ${amountEth.toFixed(4)} ETH @ ${buyTime}`);
   appendLog({ time: new Date().toISOString(), action: 'BUY', token, amountEth: amountEth.toFixed(6), tx: tx.hash });
   return { success: true, tx: tx.hash };
 }
@@ -517,6 +519,8 @@ async function sell(amountToken, path, token, opts = {}) {
     const afterWeth = await getTokenBalance(WETH_ADDRESS, walletAddress, 'WETH');
     const earned = afterWeth - beforeWeth;
     console.log(`✅ Sold ${token} for ${earned.toFixed(4)} WETH`);
+    const sellNow = new Date().toLocaleTimeString('en-US', { hour12: true, timeZone: 'America/Los_Angeles' });
+    console.log(`[SELL] ${token} for ${earned.toFixed(4)} ETH @ ${sellNow}`);
     appendLog({ time: new Date().toISOString(), action: 'SELL', token, amountToken: amt, tx: tx.hash });
     return { success: true, tx: tx.hash };
   } catch (err) {
