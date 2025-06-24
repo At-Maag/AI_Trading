@@ -1,52 +1,26 @@
 process.env.PAPER = 'true';
 process.env.DRY_RUN = 'true';
-
 require('dotenv').config();
-const { ethers, getAddress } = require('ethers');
+
+const { ethers } = require('ethers');
 const TOKENS = require('./tokens');
+const trade = require('./trade');
 const { getPrices } = require('./datafeeds');
-const { getWethBalance } = require('./trade');
+const { getAddress } = require('ethers');
+const { getWethBalance, sellToken } = require('./trade');
 
 const provider = new ethers.JsonRpcProvider('https://arb1.arbitrum.io/rpc');
 const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
 const walletAddress = getAddress(wallet.address);
 
-const erc20Abi = [
-  'function balanceOf(address) view returns (uint256)'
-];
-
-const TOKEN_DECIMALS = {
-  ETH: 18,
-  WETH: 18
-};
-
-function getDecimals(token) {
-  const t = (token || '').toUpperCase();
-  if (TOKEN_DECIMALS[t]) return TOKEN_DECIMALS[t];
-  if (TOKENS[t]) return 18;
-  return 6;
-}
-
-async function getTokenBalance(tokenAddr, symbol) {
-  try {
-    const contract = new ethers.Contract(tokenAddr, erc20Abi, provider);
-    const bal = await contract.balanceOf(walletAddress);
-    return Number(ethers.formatUnits(bal, getDecimals(symbol)));
-  } catch (err) {
-    console.warn(`Failed to fetch balance for ${symbol}: ${err.message}`);
-    return 0;
-  }
-}
-
 async function main() {
   console.log(`\uD83E\uDDEA Running test at ${new Date().toLocaleTimeString()} (FORCED DRY RUN)`);
 
   const prices = await getPrices();
-  const ethPrice = prices?.eth || 0;
+  const ethPrice = prices.eth || 0;
 
   const ethBal = await provider.getBalance(wallet.address);
   const eth = parseFloat(ethers.formatEther(ethBal));
-
   const weth = await getWethBalance();
   const wethValue = weth * ethPrice;
 
@@ -57,17 +31,32 @@ async function main() {
   for (const symbol of topTokens) {
     const addr = TOKENS[symbol];
     if (!addr) continue;
-    const balance = await getTokenBalance(addr, symbol);
-    const value = balance * (prices[symbol.toLowerCase()] || 0);
-    console.log(`${symbol}: ${balance.toFixed(4)} ($${value.toFixed(2)})`);
+    try {
+      const balance = await trade.getTokenBalance(addr, walletAddress, symbol);
+      const usd = prices[symbol.toLowerCase()] || 0;
+      console.log(`\u2022 ${symbol}: ${balance.toFixed(4)} ($${(balance * usd).toFixed(2)})`);
+    } catch (err) {
+      console.warn(`\u274c Failed to fetch balance for ${symbol}: ${err.message}`);
+    }
   }
 
-  console.log('\n\uD83D\uDCDA Summary:');
-  console.log(`Prices: ${JSON.stringify(prices)}`);
-  console.log(`WETH Balance: ${weth}`);
-  console.log(`ETH Balance: ${eth}`);
+  console.log('\n\uD83E\uDDEA Simulating Buy (GRT):');
+  try {
+    const buyResult = await trade.buy('GRT', { simulate: true, dryRun: true });
+    console.log(buyResult);
+  } catch (err) {
+    console.log(`\u274c Buy test failed: ${err.message}`);
+  }
 
-  console.log('\u2705 Test complete.');
+  console.log('\n\uD83E\uDDEA Simulating Sell (DYDX):');
+  try {
+    const sellResult = await sellToken('DYDX');
+    console.log(sellResult);
+  } catch (err) {
+    console.log(`\u274c Sell test failed: ${err.message}`);
+  }
+
+  console.log('\n\u2705 Test complete.\n');
 }
 
 main().catch(console.error);
