@@ -290,7 +290,10 @@ async function checkTrades(entries, ethPrice, isTop) {
           continue;
         }
 
-        const tokenAddr = TOKENS[symbol.toUpperCase()];
+        let tokenAddr = TOKENS[symbol.toUpperCase()];
+        if (!tokenAddr && TOKENS.getTokenAddress) {
+          tokenAddr = await TOKENS.getTokenAddress(symbol);
+        }
         if (!tokenAddr) {
           console.log("Token address is null, skipping trade.");
           continue;
@@ -325,7 +328,10 @@ async function checkTrades(entries, ethPrice, isTop) {
         let res;
         if (!paper) {
           try {
-            const tokenAddr = TOKENS[symbol.toUpperCase()];
+            let tokenAddr = TOKENS[symbol.toUpperCase()];
+            if (!tokenAddr && TOKENS.getTokenAddress) {
+              tokenAddr = await TOKENS.getTokenAddress(symbol);
+            }
             if (!tokenAddr) {
               console.log("Token address is null, skipping trade.");
             } else {
@@ -337,7 +343,10 @@ async function checkTrades(entries, ethPrice, isTop) {
             recordFailure(symbol, err.message);
           }
         } else {
-          const tokenAddr = TOKENS[symbol.toUpperCase()];
+          let tokenAddr = TOKENS[symbol.toUpperCase()];
+          if (!tokenAddr && TOKENS.getTokenAddress) {
+            tokenAddr = await TOKENS.getTokenAddress(symbol);
+          }
           if (tokenAddr) {
             res = await trade.sellToken(symbol);
           }

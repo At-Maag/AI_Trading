@@ -25,7 +25,9 @@ const ID_MAP = {
   BAND: 'band-protocol',
   RLC: 'iexec-rlc',
   AMPL: 'ampleforth',
-  STORJ: 'storj'
+  STORJ: 'storj',
+  USDC: 'usd-coin',
+  USDT: 'tether'
 };
 
 async function getPrices() {
