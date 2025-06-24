@@ -35,15 +35,21 @@ const CACHE_FILE = path.join(__dirname, '..', 'data', 'tokens.json');
 
 let cachedTokens = [];
 let lastFetched = 0;
+let cacheLoaded = false;
 
-function loadCache() {
+function loadCache(forceRefresh = false) {
   try {
+    if (forceRefresh) return;
     if (!fs.existsSync(CACHE_FILE)) return;
+    const stat = fs.statSync(CACHE_FILE);
+    const maxAge = (config.cacheHours || 24) * 60 * 60 * 1000;
+    if (Date.now() - stat.mtimeMs > maxAge) return;
     const txt = fs.readFileSync(CACHE_FILE, 'utf8');
     const arr = JSON.parse(txt);
     if (Array.isArray(arr) && arr.length) {
       cachedTokens = arr;
-      lastFetched = Date.now();
+      lastFetched = stat.mtimeMs;
+      cacheLoaded = true;
       console.log(`\u267B Loaded ${cachedTokens.length} cached tokens`);
     }
   } catch {}
@@ -52,13 +58,12 @@ function loadCache() {
 function saveCache(tokens) {
   try {
     fs.mkdirSync(path.dirname(CACHE_FILE), { recursive: true });
-    fs.writeFileSync(CACHE_FILE, JSON.stringify(tokens.slice(0, 25), null, 2));
+    const count = config.tokenCount || 50;
+    fs.writeFileSync(CACHE_FILE, JSON.stringify(tokens.slice(0, count), null, 2));
   } catch (err) {
     console.warn(`\u26A0\uFE0F Failed to save cache: ${err.message}`);
   }
 }
-
-loadCache();
 
 async function fetchTokenList() {
   try {
@@ -123,13 +128,17 @@ async function validateToken(token, ethPrice) {
 
   TOKENS[token.symbol.toUpperCase()] = checksummed;
   console.log(`\u2705 Validated ${token.symbol.toUpperCase()}`);
-  return { symbol: token.symbol.toUpperCase(), score: price };
+  return { symbol: token.symbol.toUpperCase(), address: checksummed, score: price };
 }
 
 async function getValidTokens(forceRefresh = false) {
+  loadCache(forceRefresh);
+  if (forceRefresh) {
+    console.log('\uD83D\uDD01 Forced refresh requested');
+  }
   const now = Date.now();
   const maxAge = (config.cacheHours || 24) * 60 * 60 * 1000;
-  if (!forceRefresh && cachedTokens.length && now - lastFetched < maxAge) {
+  if (!forceRefresh && cachedTokens.length && now - lastFetched < maxAge && cacheLoaded) {
     console.log(`\u267B Using cached token list (${cachedTokens.length})`);
     return [...cachedTokens];
   }
@@ -148,36 +157,40 @@ async function getValidTokens(forceRefresh = false) {
     );
 
     valid.sort((a, b) => b.score - a.score);
-    console.log(`\u2705 Using top 25 tokens for trading`);
+    const count = config.tokenCount || 50;
+    console.log(`\u2705 Using top ${count} tokens for trading`);
 
-    if (valid.length >= 25) {
-      cachedTokens = valid;
+    if (valid.length >= count) {
+      cachedTokens = valid.slice(0, count);
     } else {
       console.log('\u274c Fallback triggered: using static token list');
       const staticList = TOKENS.getValidTokens ? TOKENS.getValidTokens() : FALLBACK_LIST;
       cachedTokens = staticList.length
-        ? staticList.map(t => ({ symbol: t.symbol, score: 0 }))
-        : BASIC_FALLBACK.map(t => ({ symbol: t.symbol, score: 0 }));
+        ? staticList.map(t => ({ symbol: t.symbol, address: t.address, score: 0 }))
+        : BASIC_FALLBACK.map(t => ({ symbol: t.symbol, address: t.address, score: 0 }));
     }
     lastFetched = Date.now();
     saveCache(cachedTokens);
+    console.log('\u2705 Using new token list');
     return [...cachedTokens];
   } catch (err) {
     console.warn(`\u274c Token fetch failed: ${err.message}`);
     const staticList = TOKENS.getValidTokens ? TOKENS.getValidTokens() : FALLBACK_LIST;
     cachedTokens = staticList.length
-      ? staticList.map(t => ({ symbol: t.symbol, score: 0 }))
-      : BASIC_FALLBACK.map(t => ({ symbol: t.symbol, score: 0 }));
+      ? staticList.map(t => ({ symbol: t.symbol, address: t.address, score: 0 }))
+      : BASIC_FALLBACK.map(t => ({ symbol: t.symbol, address: t.address, score: 0 }));
     lastFetched = Date.now();
     saveCache(cachedTokens);
+    console.log('\u2705 Using fallback token list');
     return [...cachedTokens];
   }
 }
 
 function getTop25TradableTokens(forceRefresh = false) {
-  return getValidTokens(forceRefresh).then(list =>
-    list.slice(0, 25).map(t => t.symbol)
-  );
+  return getValidTokens(forceRefresh).then(list => {
+    const count = config.tokenCount || 50;
+    return list.slice(0, count).map(t => t.symbol);
+  });
 }
 
 module.exports = { getValidTokens, getTop25TradableTokens };

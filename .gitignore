@@ -3,4 +3,5 @@ ai-trading-bot/.env
 ai-trading-bot/logs/
 .DS_Store
 logs/
+ai-trading-bot/data/tokens.json
 

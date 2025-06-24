@@ -1,5 +1,6 @@
 require('dotenv').config();
 const FORCE_REFRESH = process.argv.includes('--force-refresh');
+if (FORCE_REFRESH) console.log('🔁 Forced refresh enabled');
 const { getPrices } = require('./datafeeds');
 const strategy = require('./strategy');
 const trade = require('./trade');
@@ -39,16 +40,19 @@ let validTokens = [];
 const activePositions = new Set();
 const lastScores = {};
 
-async function refreshTokenList(initial = false) {
-  const list = await getValidTokens(FORCE_REFRESH);
+async function refreshTokenList(initial = false, force = false) {
+  if (force) console.log('🔁 Forced refresh');
+  const list = await getValidTokens(force);
   if (!list || !list.length) return;
   list.sort((a, b) => b.score - a.score);
-  const tokens = list.slice(0, 25).map(t => t.symbol);
+  const count = config.tokenCount || 50;
+  const tokens = list.slice(0, count).map(t => t.symbol);
 
   if (initial || !validTokens.length) {
-    validTokens = tokens.slice(0, 25);
+    validTokens = tokens.slice(0, count);
     config.coins = ['WETH', ...validTokens];
     console.log(`[${localTime()}] [TOKENS] Loaded ${validTokens.length} tradable tokens`);
+    console.log('✅ Using new list');
     return;
   }
 
@@ -62,6 +66,8 @@ async function refreshTokenList(initial = false) {
 
   validTokens = validTokens.filter(t => !toRemove.includes(t));
   validTokens.push(...toAdd);
+  const limit = config.tokenCount || 50;
+  validTokens = validTokens.slice(0, limit);
 
   const prices = await getPrices();
   for (const symbol of toAdd) {
@@ -440,7 +446,7 @@ async function loop() {
 async function main() {
   console.log(`🚀 Bot started at ${localTime()}.`);
   await TOKENS.load();
-  refreshTokenList(true).catch(logError);
+  refreshTokenList(true, FORCE_REFRESH).catch(logError);
   setInterval(() => {
     refreshTokenList().catch(logError);
   }, 60 * 60 * 1000);
