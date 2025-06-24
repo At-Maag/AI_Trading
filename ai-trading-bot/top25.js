@@ -6,6 +6,7 @@ const path = require('path');
 const TOKENS = require('./tokens');
 const { FALLBACK_TOKENS } = require('./tokens');
 const trade = require('./trade');
+const config = require('./config');
 require('dotenv').config();
 
 const TOKEN_LIST_URL =
@@ -37,6 +38,7 @@ let lastFetched = 0;
 
 function loadCache() {
   try {
+    if (!fs.existsSync(CACHE_FILE)) return;
     const txt = fs.readFileSync(CACHE_FILE, 'utf8');
     const arr = JSON.parse(txt);
     if (Array.isArray(arr) && arr.length) {
@@ -124,9 +126,10 @@ async function validateToken(token, ethPrice) {
   return { symbol: token.symbol.toUpperCase(), score: price };
 }
 
-async function getValidTokens() {
+async function getValidTokens(forceRefresh = false) {
   const now = Date.now();
-  if (cachedTokens.length && now - lastFetched < 24 * 60 * 60 * 1000) {
+  const maxAge = (config.cacheHours || 24) * 60 * 60 * 1000;
+  if (!forceRefresh && cachedTokens.length && now - lastFetched < maxAge) {
     console.log(`\u267B Using cached token list (${cachedTokens.length})`);
     return [...cachedTokens];
   }
@@ -147,25 +150,34 @@ async function getValidTokens() {
     valid.sort((a, b) => b.score - a.score);
     console.log(`\u2705 Using top 25 tokens for trading`);
 
-    if (valid.length) {
+    if (valid.length >= 25) {
       cachedTokens = valid;
-      lastFetched = Date.now();
-      saveCache(cachedTokens);
     } else {
-      // Provide minimal set when validations fail entirely
-      cachedTokens = BASIC_FALLBACK.map(t => ({ symbol: t.symbol, score: 0 }));
-      lastFetched = Date.now();
-      saveCache(cachedTokens);
+      console.log('\u274c Fallback triggered: using static token list');
+      const staticList = TOKENS.getValidTokens ? TOKENS.getValidTokens() : FALLBACK_LIST;
+      cachedTokens = staticList.length
+        ? staticList.map(t => ({ symbol: t.symbol, score: 0 }))
+        : BASIC_FALLBACK.map(t => ({ symbol: t.symbol, score: 0 }));
     }
+    lastFetched = Date.now();
+    saveCache(cachedTokens);
     return [...cachedTokens];
   } catch (err) {
-    // Silently return cached results on failure
+    console.warn(`\u274c Token fetch failed: ${err.message}`);
+    const staticList = TOKENS.getValidTokens ? TOKENS.getValidTokens() : FALLBACK_LIST;
+    cachedTokens = staticList.length
+      ? staticList.map(t => ({ symbol: t.symbol, score: 0 }))
+      : BASIC_FALLBACK.map(t => ({ symbol: t.symbol, score: 0 }));
+    lastFetched = Date.now();
+    saveCache(cachedTokens);
     return [...cachedTokens];
   }
 }
 
-function getTop25TradableTokens() {
-  return getValidTokens().then(list => list.slice(0, 25).map(t => t.symbol));
+function getTop25TradableTokens(forceRefresh = false) {
+  return getValidTokens(forceRefresh).then(list =>
+    list.slice(0, 25).map(t => t.symbol)
+  );
 }
 
 module.exports = { getValidTokens, getTop25TradableTokens };

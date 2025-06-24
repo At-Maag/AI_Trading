@@ -1,4 +1,5 @@
 require('dotenv').config();
+const FORCE_REFRESH = process.argv.includes('--force-refresh');
 const { getPrices } = require('./datafeeds');
 const strategy = require('./strategy');
 const trade = require('./trade');
@@ -39,7 +40,7 @@ const activePositions = new Set();
 const lastScores = {};
 
 async function refreshTokenList(initial = false) {
-  const list = await getValidTokens();
+  const list = await getValidTokens(FORCE_REFRESH);
   if (!list || !list.length) return;
   list.sort((a, b) => b.score - a.score);
   const tokens = list.slice(0, 25).map(t => t.symbol);
