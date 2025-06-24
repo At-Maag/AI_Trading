@@ -36,6 +36,10 @@ const TOKENS = {
 
 const FALLBACK_TOKENS = TOKENS;
 
+async function load() {
+  return TOKENS;
+}
+
 function getTokenAddress(symbol) {
   return TOKENS[symbol.toUpperCase()] || null;
 }
@@ -47,6 +51,7 @@ function getValidTokens() {
 }
 
 module.exports = TOKENS;
+module.exports.load = load;
 module.exports.getTokenAddress = getTokenAddress;
 module.exports.getValidTokens = getValidTokens;
 module.exports.FALLBACK_TOKENS = FALLBACK_TOKENS;
