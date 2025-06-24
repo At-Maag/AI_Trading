@@ -1,3 +1,5 @@
+// ✅ TOP25.js PATCHED FOR STABILITY, PRICE FEED, AND 50 TOKEN ENFORCEMENT
+
 const axios = require('axios');
 const { ethers } = require('ethers');
 const { getAddress } = require('ethers');
@@ -9,28 +11,20 @@ const trade = require('./trade');
 const config = require('./config');
 require('dotenv').config();
 
-const TOKEN_LIST_URL =
-  'https://raw.githubusercontent.com/SmolData/tokenlists/main/arbitrum-tokenlist.json';
+const TOKEN_LIST_URL = 'https://raw.githubusercontent.com/SmolData/tokenlists/main/arbitrum-tokenlist.json';
 
 const FALLBACK_LIST = Object.entries(FALLBACK_TOKENS)
   .filter(([, addr]) => addr !== null)
-  .map(([symbol, address]) => ({
-    symbol,
-    address
-  }));
+  .map(([symbol, address]) => ({ symbol, address }));
 
-// Minimal token set used when network calls fail completely
 const BASIC_FALLBACK = [
   { symbol: 'WETH', address: TOKENS.WETH },
   { symbol: 'USDC', address: TOKENS.USDC },
   { symbol: 'USDT', address: TOKENS.USDT },
   { symbol: 'DAI', address: TOKENS.DAI },
-  { symbol: 'WBTC', address: TOKENS.WBTC }
 ];
 
-// Provider for on-chain lookups on Arbitrum
 const provider = new ethers.JsonRpcProvider('https://arb1.arbitrum.io/rpc');
-
 const CACHE_FILE = path.join(__dirname, '..', 'data', 'tokens.json');
 
 let cachedTokens = [];
@@ -50,7 +44,7 @@ function loadCache(forceRefresh = false) {
       cachedTokens = arr;
       lastFetched = stat.mtimeMs;
       cacheLoaded = true;
-      console.log(`\u267B Loaded ${cachedTokens.length} cached tokens`);
+      console.log(`♻ Loaded ${cachedTokens.length} cached tokens`);
     }
   } catch {}
 }
@@ -61,7 +55,7 @@ function saveCache(tokens) {
     const count = config.tokenCount || 50;
     fs.writeFileSync(CACHE_FILE, JSON.stringify(tokens.slice(0, count), null, 2));
   } catch (err) {
-    console.warn(`\u26A0\uFE0F Failed to save cache: ${err.message}`);
+    console.warn(`⚠️ Failed to save cache: ${err.message}`);
   }
 }
 
@@ -76,74 +70,71 @@ async function fetchTokenList() {
       const sym = t.symbol.toUpperCase();
       if (seen.has(sym)) continue;
       seen.add(sym);
-      console.log(`\u2705 Loaded ${sym}`);
+      console.log(`✅ Loaded ${sym}`);
       list.push({ symbol: sym, address: t.address });
     }
     return list;
   } catch (err) {
-    // Silently fall back to the built-in list
     return [...FALLBACK_LIST];
   }
 }
 
 async function fetchEthPrice() {
   try {
-    const { data } = await axios.get(
-      'https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd',
-      { timeout: 10000 }
-    );
-    return data.ethereum.usd;
+    const feedAddress = '0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612'; // Chainlink ETH/USD
+    const abi = ['function latestAnswer() view returns (int256)'];
+    const feed = new ethers.Contract(feedAddress, abi, provider);
+    const price = await feed.latestAnswer();
+    return Number(price) / 1e8;
   } catch (err) {
-    console.error(`\u26A0\uFE0F ETH price fetch failed: ${err.message}`);
+    console.error(`⚠️ ETH price fetch failed: ${err.message}`);
     return 0;
   }
 }
 
 async function validateToken(token, ethPrice) {
-  let address = token.address;
-  if (!address) {
-    address = TOKENS[token.symbol.toUpperCase()];
-  }
-  if (!address && TOKENS.getTokenAddress) {
-    address = await TOKENS.getTokenAddress(token.symbol);
-  }
+  let address = token.address || TOKENS[token.symbol.toUpperCase()] || await TOKENS.getTokenAddress?.(token.symbol);
   if (!address) return null;
 
   let checksummed;
   try {
     checksummed = getAddress(address);
   } catch {
-    console.warn(`\u274c Invalid address for ${token.symbol.toUpperCase()}: ${address}`);
+    console.warn(`❌ Invalid address for ${token.symbol.toUpperCase()}: ${address}`);
     return null;
   }
 
-  const weth = TOKENS.WETH || (await TOKENS.getTokenAddress('WETH'));
+  const weth = TOKENS.WETH || await TOKENS.getTokenAddress('WETH');
   if (!weth) return null;
 
-  const hasLiquidity = await trade.validateLiquidity(weth, checksummed, token.symbol);
-  if (!hasLiquidity) return null;
+  try {
+    const hasLiquidity = await trade.validateLiquidity(weth, checksummed, token.symbol);
+    if (!hasLiquidity) return null;
 
-  const price = await trade.getTokenUsdPrice(token.symbol);
-  if (!price) return null;
+    const price = await trade.getTokenUsdPrice(token.symbol);
+    if (!price) return null;
 
-  TOKENS[token.symbol.toUpperCase()] = checksummed;
-  console.log(`\u2705 Validated ${token.symbol.toUpperCase()}`);
-  return { symbol: token.symbol.toUpperCase(), address: checksummed, score: price };
+    TOKENS[token.symbol.toUpperCase()] = checksummed;
+    console.log(`✅ Validated ${token.symbol.toUpperCase()}`);
+    return { symbol: token.symbol.toUpperCase(), address: checksummed, score: price };
+  } catch (err) {
+    console.warn(`⚠️ Validation failed for ${token.symbol}: ${err.message}`);
+    return null;
+  }
 }
 
 async function getValidTokens(forceRefresh = false) {
   loadCache(forceRefresh);
-  if (forceRefresh) {
-    console.log('\uD83D\uDD01 Forced refresh requested');
-  }
+  if (forceRefresh) console.log('🔁 Forced refresh requested');
   const now = Date.now();
   const maxAge = (config.cacheHours || 24) * 60 * 60 * 1000;
   if (!forceRefresh && cachedTokens.length && now - lastFetched < maxAge && cacheLoaded) {
-    console.log(`\u267B Using cached token list (${cachedTokens.length})`);
+    console.log(`♻ Using cached token list (${cachedTokens.length})`);
     return [...cachedTokens];
   }
+
   try {
-    console.log('\uD83D\uDD04 Loading token list...');
+    console.log('🔄 Loading token list...');
     const ethPrice = await fetchEthPrice();
     const tokenList = await fetchTokenList();
     const valid = [];
@@ -152,36 +143,29 @@ async function getValidTokens(forceRefresh = false) {
       if (res) valid.push(res);
     }
 
-    console.log(
-      `\u2705 Validated ${valid.length} of ${tokenList.length} tokens (minimum $5 liquidity)`
-    );
+    console.log(`✅ Validated ${valid.length} of ${tokenList.length} tokens`);
 
     valid.sort((a, b) => b.score - a.score);
     const count = config.tokenCount || 50;
-    console.log(`\u2705 Using top ${count} tokens for trading`);
-
     if (valid.length >= count) {
       cachedTokens = valid.slice(0, count);
     } else {
-      console.log('\u274c Fallback triggered: using static token list');
-      const staticList = TOKENS.getValidTokens ? TOKENS.getValidTokens() : FALLBACK_LIST;
-      cachedTokens = staticList.length
-        ? staticList.map(t => ({ symbol: t.symbol, address: t.address, score: 0 }))
-        : BASIC_FALLBACK.map(t => ({ symbol: t.symbol, address: t.address, score: 0 }));
+      console.log('❌ Fallback triggered: using static token list');
+      const staticList = TOKENS.getValidTokens?.() || FALLBACK_LIST;
+      cachedTokens = staticList.map(t => ({ symbol: t.symbol, address: t.address, score: 0 }));
     }
+
     lastFetched = Date.now();
     saveCache(cachedTokens);
-    console.log('\u2705 Using new token list');
+    console.log('✅ Using new token list');
     return [...cachedTokens];
   } catch (err) {
-    console.warn(`\u274c Token fetch failed: ${err.message}`);
-    const staticList = TOKENS.getValidTokens ? TOKENS.getValidTokens() : FALLBACK_LIST;
-    cachedTokens = staticList.length
-      ? staticList.map(t => ({ symbol: t.symbol, address: t.address, score: 0 }))
-      : BASIC_FALLBACK.map(t => ({ symbol: t.symbol, address: t.address, score: 0 }));
+    console.warn(`❌ Token fetch failed: ${err.message}`);
+    const staticList = TOKENS.getValidTokens?.() || FALLBACK_LIST;
+    cachedTokens = staticList.map(t => ({ symbol: t.symbol, address: t.address, score: 0 }));
     lastFetched = Date.now();
     saveCache(cachedTokens);
-    console.log('\u2705 Using fallback token list');
+    console.log('✅ Using fallback token list');
     return [...cachedTokens];
   }
 }
