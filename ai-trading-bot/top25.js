@@ -2,11 +2,17 @@ const axios = require('axios');
 const { ethers } = require('ethers');
 const { getAddress } = require('ethers');
 const TOKENS = require('./tokens');
+const { FALLBACK_TOKENS } = require('./tokens');
 const trade = require('./trade');
 require('dotenv').config();
 
 const TOKEN_LIST_URL =
   'https://tokens.coingecko.com/arbitrum/all.json';
+
+const FALLBACK_LIST = Object.entries(FALLBACK_TOKENS).map(([symbol, address]) => ({
+  symbol,
+  address
+}));
 
 // Provider for on-chain lookups on Arbitrum
 const provider = new ethers.JsonRpcProvider('https://arb1.arbitrum.io/rpc');
@@ -16,20 +22,30 @@ let cachedTokens = [];
 let lastFetched = 0;
 
 async function fetchTokenList() {
-  const { data } = await axios.get(TOKEN_LIST_URL, { timeout: 15000 });
-  if (!data || !Array.isArray(data.tokens)) return [];
-  return data.tokens.slice(0, 300).map(t => ({
-    symbol: t.symbol,
-    address: t.address
-  }));
+  try {
+    const { data } = await axios.get(TOKEN_LIST_URL, { timeout: 15000 });
+    if (!data || !Array.isArray(data.tokens)) return [...FALLBACK_LIST];
+    return data.tokens.slice(0, 300).map(t => ({
+      symbol: t.symbol,
+      address: t.address
+    }));
+  } catch (err) {
+    console.error(`\u26A0\uFE0F Failed to fetch token list: ${err.message}`);
+    return [...FALLBACK_LIST];
+  }
 }
 
 async function fetchEthPrice() {
-  const { data } = await axios.get(
-    'https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd',
-    { timeout: 10000 }
-  );
-  return data.ethereum.usd;
+  try {
+    const { data } = await axios.get(
+      'https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd',
+      { timeout: 10000 }
+    );
+    return data.ethereum.usd;
+  } catch (err) {
+    console.error(`\u26A0\uFE0F ETH price fetch failed: ${err.message}`);
+    return 0;
+  }
 }
 
 async function validateToken(token, ethPrice) {
