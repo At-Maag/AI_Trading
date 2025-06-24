@@ -2,32 +2,27 @@ const axios = require('axios');
 const { ethers } = require('ethers');
 const { getAddress } = require('ethers');
 const TOKENS = require('./tokens');
+const trade = require('./trade');
 require('dotenv').config();
 
-const STATIC_TOKENS = [
-  'WETH', 'LINK', 'UNI', 'DYDX', 'GRT', 'RLC', 'OCEAN', 'WBTC', 'USDC', 'USDT',
-  'ARB', 'MATIC', 'CRV', 'BAL', 'SNX', 'LDO', 'SUSHI', 'AAVE', 'COMP', 'BAND',
-  'AMPL', 'REN'
-];
+const TOKEN_LIST_URL =
+  'https://tokens.coingecko.com/arbitrum/all.json';
 
 // Provider for on-chain lookups on Arbitrum
 const provider = new ethers.JsonRpcProvider('https://arb1.arbitrum.io/rpc');
 
-const factoryAbi = [
-  'function getPair(address tokenA, address tokenB) external view returns (address pair)'
-];
-
-const pairAbi = [
-  'function getReserves() external view returns (uint112 reserve0, uint112 reserve1, uint32 blockTimestampLast)',
-  'function token0() external view returns (address)',
-  'function token1() external view returns (address)'
-];
-
-const factoryAddress = getAddress('0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f');
-const factory = new ethers.Contract(factoryAddress, factoryAbi, provider);
 
 let cachedTokens = [];
 let lastFetched = 0;
+
+async function fetchTokenList() {
+  const { data } = await axios.get(TOKEN_LIST_URL, { timeout: 15000 });
+  if (!data || !Array.isArray(data.tokens)) return [];
+  return data.tokens.slice(0, 300).map(t => ({
+    symbol: t.symbol,
+    address: t.address
+  }));
+}
 
 async function fetchEthPrice() {
   const { data } = await axios.get(
@@ -38,24 +33,14 @@ async function fetchEthPrice() {
 }
 
 async function validateToken(token, ethPrice) {
-  let address = token.platforms && token.platforms.ethereum;
+  let address = token.address;
   if (!address) {
-    // Fall back to a statically configured address if available
     address = TOKENS[token.symbol.toUpperCase()];
   }
   if (!address && TOKENS.getTokenAddress) {
     address = await TOKENS.getTokenAddress(token.symbol);
   }
-  if (!address) {
-    try {
-      // Attempt ENS lookup as a last resort
-      address = await provider.resolveName(`${token.symbol}.eth`);
-    } catch {}
-  }
-  if (!address) {
-    console.warn(`\u274c Missing address for ${token.symbol.toUpperCase()}`);
-    return null;
-  }
+  if (!address) return null;
 
   let checksummed;
   try {
@@ -65,10 +50,18 @@ async function validateToken(token, ethPrice) {
     return null;
   }
 
-  // \u2705 Skip Uniswap V2 pair check on Arbitrum (V2 not used here)
+  const weth = TOKENS.WETH || (await TOKENS.getTokenAddress('WETH'));
+  if (!weth) return null;
+
+  const hasLiquidity = await trade.validateLiquidity(weth, checksummed, token.symbol);
+  if (!hasLiquidity) return null;
+
+  const price = await trade.getTokenUsdPrice(token.symbol);
+  if (!price) return null;
+
   TOKENS[token.symbol.toUpperCase()] = checksummed;
   console.log(`\u2705 Validated ${token.symbol.toUpperCase()}`);
-  return token.symbol.toUpperCase();
+  return { symbol: token.symbol.toUpperCase(), score: price };
 }
 
 async function getValidTokens() {
@@ -78,17 +71,16 @@ async function getValidTokens() {
     return [...cachedTokens];
   }
   try {
-    console.log('\uD83D\uDD04 Validating static token list...');
+    console.log('\uD83D\uDD04 Loading token list...');
     const ethPrice = await fetchEthPrice();
-    const tokenSymbols = STATIC_TOKENS;
+    const tokenList = await fetchTokenList();
     const valid = [];
-    for (const symbol of tokenSymbols) {
-      const res = await validateToken({ symbol }, ethPrice);
-      if (res && !valid.includes(res)) {
-        valid.push(res);
-      }
-      if (valid.length >= 25) break;
+    for (const token of tokenList) {
+      const res = await validateToken(token, ethPrice);
+      if (res) valid.push(res);
     }
+
+    valid.sort((a, b) => b.score - a.score);
 
     if (valid.length) {
       cachedTokens = valid;
@@ -103,7 +95,7 @@ async function getValidTokens() {
 }
 
 function getTop25TradableTokens() {
-  return getValidTokens();
+  return getValidTokens().then(list => list.slice(0, 25).map(t => t.symbol));
 }
 
 module.exports = { getValidTokens, getTop25TradableTokens };
