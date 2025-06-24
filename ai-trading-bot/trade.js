@@ -327,8 +327,8 @@ async function validateLiquidity(tokenA, tokenB, symbol) {
     } else {
       liquidityUsd = Number(ethers.formatEther(reserve));
     }
-    if (liquidityUsd < 10) {
-      console.debug(`[LIQUIDITY] Skipped ${symbol}: liquidity < $10`);
+    if (liquidityUsd < 5) {
+      console.debug(`[LIQUIDITY] Skipped ${symbol}: liquidity < $5`);
       return false;
     }
     return true;

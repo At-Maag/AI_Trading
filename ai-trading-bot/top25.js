@@ -98,9 +98,13 @@ async function getValidTokens() {
       const res = await validateToken(token, ethPrice);
       if (res) valid.push(res);
     }
-    console.log(`\u2705 Validated ${valid.length} tokens`);
+
+    console.log(
+      `\u2705 Validated ${valid.length} of ${tokenList.length} tokens (minimum $5 liquidity)`
+    );
 
     valid.sort((a, b) => b.score - a.score);
+    console.log(`\u2705 Using top 25 tokens for trading`);
 
     if (valid.length) {
       cachedTokens = valid;
