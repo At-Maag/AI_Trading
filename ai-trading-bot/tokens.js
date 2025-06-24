@@ -2,7 +2,10 @@ const ethers = require('ethers');
 
 function safeGetAddress(addr, symbol) {
   try {
-    return ethers.getAddress(addr);
+    // Normalize case before checksum verification to tolerate non-checksummed
+    // addresses in the built-in list. This lets ethers.js compute the correct
+    // EIP-55 checksum instead of throwing an error.
+    return ethers.getAddress(addr.toLowerCase());
   } catch {
     console.error(`❌ Invalid address: ${symbol} - ${addr}`);
     return null;
