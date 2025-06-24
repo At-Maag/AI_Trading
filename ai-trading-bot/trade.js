@@ -605,4 +605,12 @@ async function autoWrapOrUnwrap() {
   }
 }
 
-module.exports = { buy, sellToken, getWethBalance, getTokenBalance, autoWrapOrUnwrap };
+module.exports = {
+  buy,
+  sellToken,
+  getWethBalance,
+  getTokenBalance,
+  autoWrapOrUnwrap,
+  validateLiquidity,
+  getTokenUsdPrice
+};

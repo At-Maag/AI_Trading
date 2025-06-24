@@ -8,7 +8,7 @@ const path = require('path');
 const { ethers, getAddress } = require('ethers');
 const config = require('./config');
 const TOKENS = require('./tokens');
-const { getValidTokens, getTop25TradableTokens } = require('./top25');
+const { getValidTokens } = require('./top25');
 
 const MIN_TRADE_USD = 10;
 console.debug = () => {};
@@ -39,8 +39,10 @@ const activePositions = new Set();
 const lastScores = {};
 
 async function refreshTokenList(initial = false) {
-  const tokens = await getTop25TradableTokens();
-  if (!tokens || !tokens.length) return;
+  const list = await getValidTokens();
+  if (!list || !list.length) return;
+  list.sort((a, b) => b.score - a.score);
+  const tokens = list.slice(0, 25).map(t => t.symbol);
 
   if (initial || !validTokens.length) {
     validTokens = tokens.slice(0, 25);
