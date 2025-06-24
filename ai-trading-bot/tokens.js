@@ -74,7 +74,7 @@ function getTokenAddress(symbol) {
 
 function getValidTokens() {
   return Object.entries(TOKENS)
-    .filter(([, addr]) => addr !== null)
+    .filter(([key, val]) => typeof val === 'string' && val !== null && val.startsWith('0x'))
     .map(([symbol, address]) => ({ symbol, address }));
 }
 
