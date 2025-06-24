@@ -14,6 +14,15 @@ const FALLBACK_LIST = Object.entries(FALLBACK_TOKENS).map(([symbol, address]) =>
   address
 }));
 
+// Minimal token set used when network calls fail completely
+const BASIC_FALLBACK = [
+  { symbol: 'WETH', address: TOKENS.WETH },
+  { symbol: 'USDC', address: TOKENS.USDC },
+  { symbol: 'USDT', address: TOKENS.USDT },
+  { symbol: 'DAI', address: TOKENS.DAI },
+  { symbol: 'WBTC', address: TOKENS.WBTC }
+];
+
 // Provider for on-chain lookups on Arbitrum
 const provider = new ethers.JsonRpcProvider('https://arb1.arbitrum.io/rpc');
 
@@ -108,6 +117,10 @@ async function getValidTokens() {
 
     if (valid.length) {
       cachedTokens = valid;
+      lastFetched = Date.now();
+    } else {
+      // Provide minimal set when validations fail entirely
+      cachedTokens = BASIC_FALLBACK.map(t => ({ symbol: t.symbol, score: 0 }));
       lastFetched = Date.now();
     }
     return [...cachedTokens];
