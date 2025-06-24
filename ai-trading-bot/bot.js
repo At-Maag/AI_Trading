@@ -156,6 +156,12 @@ function recordFailure(symbol, reason) {
       console.log(`[DISABLED] ${symbol} due to repeated failures`);
     }
   }
+  setTimeout(() => {
+    if (disabledTokens.has(symbol)) {
+      disabledTokens.delete(symbol);
+      console.log(`[RETRY] Re-enabled ${symbol} after cooldown`);
+    }
+  }, 12 * 60 * 60 * 1000);
 }
 
 let lastGroupBCheck = 0;
@@ -268,7 +274,12 @@ async function checkTrades(entries, ethPrice, isTop) {
       continue;
     }
 
-    if (closing.length < 14) {
+  if (closing.length < 14) {
+    continue;
+  }
+
+    if (score < 2 && !process.env.AGGRESSIVE) {
+      console.log(`❌ Confidence too low: ${score}`);
       continue;
     }
 
@@ -301,6 +312,7 @@ async function checkTrades(entries, ethPrice, isTop) {
         let res;
         if (!paper) {
           try {
+            await trade.autoWrapOrUnwrap();
             res = await trade.buy(symbol, { simulate: isTop, dryRun: DRY_RUN });
             if (!res.success) recordFailure(symbol, res.reason);
           } catch (err) {
@@ -308,6 +320,7 @@ async function checkTrades(entries, ethPrice, isTop) {
             recordFailure(symbol, err.message);
           }
         } else {
+          await trade.autoWrapOrUnwrap();
           res = await trade.buy(symbol, { simulate: isTop, dryRun: true });
         }
         if (res && res.success) {
@@ -335,6 +348,7 @@ async function checkTrades(entries, ethPrice, isTop) {
             if (!tokenAddr) {
               console.log("Token address is null, skipping trade.");
             } else {
+              await trade.autoWrapOrUnwrap();
               res = await trade.sellToken(symbol);
               if (!res.success) recordFailure(symbol, res.reason);
             }
@@ -348,6 +362,7 @@ async function checkTrades(entries, ethPrice, isTop) {
             tokenAddr = await TOKENS.getTokenAddress(symbol);
           }
           if (tokenAddr) {
+            await trade.autoWrapOrUnwrap();
             res = await trade.sellToken(symbol);
           }
         }
@@ -365,6 +380,7 @@ async function loop() {
   try {
     const prices = await getPrices();
     if (!prices) return;
+    await trade.autoWrapOrUnwrap();
     lastWethBal = await trade.getWethBalance();
     if (!startWeth) startWeth = lastWethBal;
     const evaluations = await evaluate(prices, lastWethBal, prices.eth);

@@ -342,6 +342,11 @@ async function buy(token, opts = {}) {
     return { success: false, reason: 'invalid-token' };
   }
 
+  if (opts.dryRun || process.env.PAPER === 'true' || DRY_RUN) {
+    console.log(`[DRY] Simulating buy for ${token}`);
+    return { success: true, simulated: true };
+  }
+
   if (!await gasOkay()) return { success: false, reason: 'gas' };
 
   let tokenAddr = TOKENS[token.toUpperCase()];
@@ -571,4 +576,27 @@ async function getWethBalance() {
   return getTokenBalance(WETH_ADDRESS, walletAddress, 'WETH');
 }
 
-module.exports = { buy, sellToken, getWethBalance, getTokenBalance };
+async function autoWrapOrUnwrap() {
+  const ethBalance = parseFloat(ethers.formatEther(await provider.getBalance(wallet.address)));
+  const wethBalance = await getWethBalance();
+
+  if (ethBalance < 0.003 && wethBalance > 0.01) {
+    const WETH = new ethers.Contract(TOKENS.WETH, erc20Abi, wallet);
+    const amount = parseAmount(0.01, 'WETH');
+    const tx = await WETH.withdraw(amount);
+    await tx.wait();
+    console.log(`✅ Unwrapped 0.01 WETH to ETH for gas`);
+    return;
+  }
+
+  if (wethBalance < 0.01 && ethBalance > 0.01) {
+    const WETH = new ethers.Contract(TOKENS.WETH, erc20Abi, wallet);
+    const amount = parseAmount(0.01, 'ETH');
+    const tx = await WETH.deposit({ value: amount });
+    await tx.wait();
+    console.log(`✅ Wrapped 0.01 ETH to WETH for trading`);
+    return;
+  }
+}
+
+module.exports = { buy, sellToken, getWethBalance, getTokenBalance, autoWrapOrUnwrap };
