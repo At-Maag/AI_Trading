@@ -1,6 +1,8 @@
 const axios = require('axios');
 const { ethers } = require('ethers');
 const { getAddress } = require('ethers');
+const fs = require('fs');
+const path = require('path');
 const TOKENS = require('./tokens');
 const { FALLBACK_TOKENS } = require('./tokens');
 const trade = require('./trade');
@@ -26,19 +28,47 @@ const BASIC_FALLBACK = [
 // Provider for on-chain lookups on Arbitrum
 const provider = new ethers.JsonRpcProvider('https://arb1.arbitrum.io/rpc');
 
+const CACHE_FILE = path.join(__dirname, '..', 'data', 'tokens.json');
 
 let cachedTokens = [];
 let lastFetched = 0;
+
+function loadCache() {
+  try {
+    const txt = fs.readFileSync(CACHE_FILE, 'utf8');
+    const arr = JSON.parse(txt);
+    if (Array.isArray(arr) && arr.length) {
+      cachedTokens = arr;
+      lastFetched = Date.now();
+      console.log(`\u267B Loaded ${cachedTokens.length} cached tokens`);
+    }
+  } catch {}
+}
+
+function saveCache(tokens) {
+  try {
+    fs.mkdirSync(path.dirname(CACHE_FILE), { recursive: true });
+    fs.writeFileSync(CACHE_FILE, JSON.stringify(tokens.slice(0, 25), null, 2));
+  } catch (err) {
+    console.warn(`\u26A0\uFE0F Failed to save cache: ${err.message}`);
+  }
+}
+
+loadCache();
 
 async function fetchTokenList() {
   try {
     const { data } = await axios.get(TOKEN_LIST_URL, { timeout: 15000 });
     if (!data || !Array.isArray(data.tokens)) return [...FALLBACK_LIST];
     const list = [];
+    const seen = new Set();
     for (const t of data.tokens.slice(0, 250)) {
       if (!t.symbol || !t.address) continue;
-      console.log(`\u2705 Loaded ${t.symbol.toUpperCase()}`);
-      list.push({ symbol: t.symbol, address: t.address });
+      const sym = t.symbol.toUpperCase();
+      if (seen.has(sym)) continue;
+      seen.add(sym);
+      console.log(`\u2705 Loaded ${sym}`);
+      list.push({ symbol: sym, address: t.address });
     }
     return list;
   } catch (err) {
@@ -118,10 +148,12 @@ async function getValidTokens() {
     if (valid.length) {
       cachedTokens = valid;
       lastFetched = Date.now();
+      saveCache(cachedTokens);
     } else {
       // Provide minimal set when validations fail entirely
       cachedTokens = BASIC_FALLBACK.map(t => ({ symbol: t.symbol, score: 0 }));
       lastFetched = Date.now();
+      saveCache(cachedTokens);
     }
     return [...cachedTokens];
   } catch (err) {
