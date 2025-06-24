@@ -4,6 +4,12 @@ const { getAddress } = require('ethers');
 const TOKENS = require('./tokens');
 require('dotenv').config();
 
+const STATIC_TOKENS = [
+  'WETH', 'LINK', 'UNI', 'DYDX', 'GRT', 'RLC', 'OCEAN', 'WBTC', 'USDC', 'USDT',
+  'ARB', 'MATIC', 'CRV', 'BAL', 'SNX', 'LDO', 'SUSHI', 'AAVE', 'COMP', 'BAND',
+  'AMPL', 'REN'
+];
+
 // Provider for on-chain lookups on Arbitrum
 const provider = new ethers.JsonRpcProvider('https://arb1.arbitrum.io/rpc');
 
@@ -74,7 +80,7 @@ async function getValidTokens() {
   try {
     console.log('\uD83D\uDD04 Validating static token list...');
     const ethPrice = await fetchEthPrice();
-    const tokenSymbols = Object.keys(TOKENS).filter(s => s !== 'WETH');
+    const tokenSymbols = STATIC_TOKENS;
     const valid = [];
     for (const symbol of tokenSymbols) {
       const res = await validateToken({ symbol }, ethPrice);
