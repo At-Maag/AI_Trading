@@ -17,5 +17,6 @@ module.exports = {
   GAS_LIMIT_GWEI: 80,
   TRADE_ALLOCATION: 0.15,
   prettyLogs: true,
-  cacheHours: 24
+  cacheHours: 24,
+  tokenCount: 50
 };
