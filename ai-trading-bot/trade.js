@@ -7,6 +7,7 @@ const TOKENS = require('./tokens');
 const { ID_MAP } = require('./datafeeds');
 require('dotenv').config();
 const DRY_RUN = process.env.DRY_RUN === 'true';
+const DEBUG_PAIRS = process.env.DEBUG_PAIRS === 'true';
 const MIN_TRADE_USD = 10;
 const MIN_BUY_USD = 5;
 const MIN_WETH_BAL = 0.005;
@@ -77,6 +78,11 @@ const pairAbi = [
   'function token1() external view returns (address)'
 ];
 
+const v3PoolAbi = [
+  'function token0() view returns (address)',
+  'function token1() view returns (address)'
+];
+
 // Connect to Arbitrum
 const provider = new ethers.JsonRpcProvider('https://arb1.arbitrum.io/rpc');
 const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
@@ -103,6 +109,13 @@ const router = new ethers.Contract(
   routerAbi,
   wallet
 );
+
+const v3FactoryAbi = [
+  'function getPool(address tokenA, address tokenB, uint24 fee) view returns (address)'
+];
+const v3FactoryAddress = getAddress('0x1F98431c8ad98523631AE4a59f267346ea31F984');
+const v3Factory = new ethers.Contract(v3FactoryAddress, v3FactoryAbi, provider);
+const FEE_TIERS = [500, 3000, 10000]; // 0.05%, 0.3%, 1%
 
 const factoryAddress = getAddress('0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f');
 const factory = new ethers.Contract(factoryAddress, factoryAbi, provider);
@@ -223,23 +236,70 @@ async function gasOkay() {
   return true;
 }
 
+async function getPairAddress(tokenA, tokenB) {
+  for (const fee of FEE_TIERS) {
+    try {
+      const pool = await withRetry(() => v3Factory.getPool(tokenA, tokenB, fee));
+      if (pool && pool !== ethers.ZeroAddress) {
+        if (DEBUG_PAIRS) {
+          console.log(`[PAIR] V3 pool ${fee} found for ${tokenA} ${tokenB}`);
+        }
+        return { address: pool, version: 'v3' };
+      }
+    } catch (err) {
+      if (DEBUG_PAIRS) {
+        console.log(`[PAIR] V3 search failed (${fee}): ${err.message}`);
+      }
+    }
+  }
+  try {
+    const pair = await withRetry(() => factory.getPair(tokenA, tokenB));
+    if (pair && pair !== ethers.ZeroAddress) {
+      if (DEBUG_PAIRS) {
+        console.log(`[PAIR] V2 pair found for ${tokenA} ${tokenB}`);
+      }
+      return { address: pair, version: 'v2' };
+    }
+    if (DEBUG_PAIRS) {
+      console.log(`[PAIR] No pair found for ${tokenA} ${tokenB}`);
+    }
+  } catch (err) {
+    if (DEBUG_PAIRS) {
+      console.log(`[PAIR] V2 search failed: ${err.message}`);
+    }
+  }
+  return { address: ethers.ZeroAddress, version: null };
+}
+
 async function validateLiquidity(tokenA, tokenB, symbol) {
   try {
-    const pairAddr = await withRetry(() => factory.getPair(tokenA, tokenB));
+    const { address: pairAddr, version } = await getPairAddress(tokenA, tokenB);
     if (pairAddr === ethers.ZeroAddress) {
       console.log(`\u274c No Uniswap pair found`);
       return false;
     }
-    const pair = new ethers.Contract(pairAddr, pairAbi, provider);
-    const reserves = await withRetry(() => pair.getReserves());
-    const token0 = await withRetry(() => pair.token0());
-    const r0 = token0.toLowerCase() === tokenA.toLowerCase() ? reserves[0] : reserves[1];
-    if (r0 === 0n) {
+    let reserve;
+    if (version === 'v3') {
+      const pool = new ethers.Contract(pairAddr, v3PoolAbi, provider);
+      const token0 = await withRetry(() => pool.token0());
+      const token1 = await withRetry(() => pool.token1());
+      const c0 = new ethers.Contract(token0, erc20Abi, provider);
+      const c1 = new ethers.Contract(token1, erc20Abi, provider);
+      const bal0 = await withRetry(() => c0.balanceOf(pairAddr));
+      const bal1 = await withRetry(() => c1.balanceOf(pairAddr));
+      reserve = token0.toLowerCase() === tokenA.toLowerCase() ? bal0 : bal1;
+    } else {
+      const pair = new ethers.Contract(pairAddr, pairAbi, provider);
+      const reserves = await withRetry(() => pair.getReserves());
+      const token0 = await withRetry(() => pair.token0());
+      reserve = token0.toLowerCase() === tokenA.toLowerCase() ? reserves[0] : reserves[1];
+    }
+    if (reserve === 0n) {
       console.log(`\u274c Pair has zero reserves`);
       return false;
     }
     const ethPrice = await getEthPrice();
-    const wethAmt = Number(ethers.formatEther(r0));
+    const wethAmt = Number(ethers.formatEther(reserve));
     if (ethPrice && wethAmt * ethPrice < 50) {
       console.log(`[LIQUIDITY] Skipped ${symbol}: liquidity < $50`);
       return false;

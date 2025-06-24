@@ -63,4 +63,10 @@ Object.entries(TOKENS).forEach(([symbol, addr]) => {
   }
 });
 
+// Provide aliases for native symbols so external modules can request either
+// the wrapped or unwrapped version transparently. This avoids issues when
+// a component passes 'ETH' or 'BTC' instead of their wrapped equivalents.
+TOKENS.ETH = TOKENS.WETH;
+TOKENS.BTC = TOKENS.WBTC;
+
 module.exports = TOKENS;

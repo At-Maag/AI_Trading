@@ -140,10 +140,17 @@ function logTrade(side, token, amount, price, reason, pnlPct) {
   fs.appendFileSync(tradeLogTxt, line + '\n');
 }
 
+const failureTimestamps = {};
 function recordFailure(symbol, reason) {
   if (!reason) return;
+  const now = Date.now();
+  if (failureTimestamps[symbol] && now - failureTimestamps[symbol] > 30 * 60 * 1000) {
+    failureCounts[symbol] = 0;
+  }
+  failureTimestamps[symbol] = now;
   if (/liquidity/i.test(reason) || /TRANSFER_FROM_FAILED/i.test(reason)) {
     failureCounts[symbol] = (failureCounts[symbol] || 0) + 1;
+    console.warn(`[FAIL] ${symbol}: ${reason}. Verify pair on Uniswap.`);
     if (failureCounts[symbol] >= 3) {
       disabledTokens.add(symbol);
       console.log(`[DISABLED] ${symbol} due to repeated failures`);
