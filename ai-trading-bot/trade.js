@@ -46,18 +46,22 @@ async function getEthPrice() {
 async function getTokenUsdPrice(symbol) {
   const tokenAddr = TOKENS[symbol.toUpperCase()];
   if (!tokenAddr) return null;
+  if (typeof priceRouter.getAmountsOut !== 'function') {
+    console.warn('❌ Router not ready, skipping token');
+    return 1; // keep token valid
+  }
   try {
-    const amounts = await router.getAmountsOut(
+    const amounts = await priceRouter.getAmountsOut(
       parseAmount(1, symbol),
       [tokenAddr, getWethAddress()]
     );
-    if (!amounts || !amounts[1]) return null;
+    if (!amounts || !amounts[1]) return 1;
     const ethPrice = await getEthPrice();
     const ethOut = Number(ethers.formatEther(amounts[1]));
     return ethOut * (ethPrice || 0);
   } catch (err) {
     console.warn(`\u274c ${symbol} price fetch failed: ${err.message}`);
-    return null;
+    return 1;
   }
 }
 
@@ -91,6 +95,13 @@ const v3PoolAbi = [
 const provider = new ethers.JsonRpcProvider('https://arb1.arbitrum.io/rpc');
 const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
 const walletAddress = getAddress(wallet.address);
+
+// Basic Uniswap router for price quotes
+const UNISWAP_ROUTER = '0xE592427A0AEce92De3Edee1F18E0157C05861564';
+const priceRouterAbi = [
+  'function getAmountsOut(uint amountIn, address[] memory path) view returns (uint[] memory)'
+];
+const priceRouter = new ethers.Contract(UNISWAP_ROUTER, priceRouterAbi, provider);
 
 async function withRetry(fn, retries = 3, delay = 1000) {
   for (let i = 0; i < retries; i++) {

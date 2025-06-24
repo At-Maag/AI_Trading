@@ -14,6 +14,10 @@ const DEBUG_TOKENS_FLAG = process.argv.includes('--debug-tokens');
 if (DEBUG_TOKENS_FLAG) {
   config.debugTokens = true;
 }
+const DEBUG_VALIDATION_FLAG = process.argv.includes('--debug-token-validation');
+if (DEBUG_VALIDATION_FLAG) {
+  config.debugTokenValidation = true;
+}
 
 const TOKEN_LIST_URL = 'https://raw.githubusercontent.com/SmolData/tokenlists/main/arbitrum-tokenlist.json';
 
@@ -113,6 +117,7 @@ async function validateToken(token, ethPrice) {
   let address = token.address || TOKENS[token.symbol.toUpperCase()] || await TOKENS.getTokenAddress?.(token.symbol);
   if (!address) {
     if (config.debugTokens) console.log(`❌ Skipped ${token.symbol.toUpperCase()}: no address`);
+    if (config.debugTokenValidation) console.log(`❌ ${token.symbol.toUpperCase()} failed: address missing`);
     return null;
   }
 
@@ -121,6 +126,7 @@ async function validateToken(token, ethPrice) {
     checksummed = getAddress(address);
   } catch {
     console.warn(`❌ Invalid address for ${token.symbol.toUpperCase()}: ${address}`);
+    if (config.debugTokenValidation) console.log(`❌ ${token.symbol.toUpperCase()} failed: invalid address`);
     return null;
   }
 
@@ -134,6 +140,7 @@ async function validateToken(token, ethPrice) {
     );
     if (!hasLiquidity) {
       if (config.debugTokens) console.log(`❌ Skipped ${token.symbol.toUpperCase()}: no liquidity`);
+      if (config.debugTokenValidation) console.log(`❌ ${token.symbol.toUpperCase()} failed: no liquidity`);
       return null;
     }
 
@@ -143,6 +150,7 @@ async function validateToken(token, ethPrice) {
     );
     if (!price) {
       if (config.debugTokens) console.log(`❌ Skipped ${token.symbol.toUpperCase()}: price fetch failed`);
+      if (config.debugTokenValidation) console.log(`❌ ${token.symbol.toUpperCase()} failed: price fetch`);
       return null;
     }
 
@@ -158,6 +166,7 @@ async function validateToken(token, ethPrice) {
     return { symbol: token.symbol.toUpperCase(), address: checksummed, score: price };
   } catch (err) {
     console.warn(`⚠️ Validation failed for ${token.symbol}: ${err.message}`);
+    if (config.debugTokenValidation) console.log(`❌ ${token.symbol.toUpperCase()} failed: ${err.message}`);
     return null;
   }
 }
@@ -196,6 +205,7 @@ async function getValidTokens(forceRefresh = false) {
       cachedTokens = valid;
     } else {
       console.log('⚠️ Using static token list (fallback)');
+      if (config.debugTokenValidation) console.log('⚠️ Falling back to static token list');
       const staticList = TOKENS.getValidTokens?.() || FALLBACK_LIST;
       cachedTokens = staticList.map(t => ({ symbol: t.symbol, address: t.address, score: 0 }));
     }
@@ -217,6 +227,7 @@ async function getValidTokens(forceRefresh = false) {
       console.log('Tokens:', cachedTokens.map(t => t.symbol).join(', '));
     }
     console.log('⚠️ Using static token list (fallback)');
+    if (config.debugTokenValidation) console.log('⚠️ Falling back to static token list');
     return [...cachedTokens];
   }
 }

@@ -20,6 +20,7 @@ module.exports = {
   cacheHours: 24,
   tokenCount: 50,
   debugTokens: false,
+  debugTokenValidation: false,
   signalThreshold: 2,
   aggressive: true
 };

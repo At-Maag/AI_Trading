@@ -4,7 +4,8 @@
   "description": "Aggressive crypto trading bot using Uniswap V2",
   "main": "bot.js",
   "scripts": {
-    "start": "node bot.js"
+    "start": "node bot.js",
+    "test": "node test.js"
   },
   "dependencies": {
     "axios": "^1.6.7",
