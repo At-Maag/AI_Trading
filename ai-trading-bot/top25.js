@@ -7,7 +7,7 @@ const trade = require('./trade');
 require('dotenv').config();
 
 const TOKEN_LIST_URL =
-  'https://tokens.coingecko.com/arbitrum/all.json';
+  'https://raw.githubusercontent.com/SmolData/tokenlists/main/arbitrum-tokenlist.json';
 
 const FALLBACK_LIST = Object.entries(FALLBACK_TOKENS).map(([symbol, address]) => ({
   symbol,
@@ -25,12 +25,15 @@ async function fetchTokenList() {
   try {
     const { data } = await axios.get(TOKEN_LIST_URL, { timeout: 15000 });
     if (!data || !Array.isArray(data.tokens)) return [...FALLBACK_LIST];
-    return data.tokens.slice(0, 300).map(t => ({
-      symbol: t.symbol,
-      address: t.address
-    }));
+    const list = [];
+    for (const t of data.tokens.slice(0, 250)) {
+      if (!t.symbol || !t.address) continue;
+      console.log(`\u2705 Loaded ${t.symbol.toUpperCase()}`);
+      list.push({ symbol: t.symbol, address: t.address });
+    }
+    return list;
   } catch (err) {
-    console.error(`\u26A0\uFE0F Failed to fetch token list: ${err.message}`);
+    // Silently fall back to the built-in list
     return [...FALLBACK_LIST];
   }
 }
@@ -102,10 +105,10 @@ async function getValidTokens() {
       cachedTokens = valid;
       lastFetched = Date.now();
     }
-    console.log(`\u2705 ${valid.length} tokens validated`);
+    console.log(`\u2705 Validated ${valid.length} tokens`);
     return [...cachedTokens];
   } catch (err) {
-    console.error(`\u274c Token validation failed: ${err.message}`);
+    // Silently return cached results on failure
     return [...cachedTokens];
   }
 }
