@@ -10,6 +10,10 @@ const { FALLBACK_TOKENS } = require('./tokens');
 const trade = require('./trade');
 const config = require('./config');
 require('dotenv').config();
+const DEBUG_TOKENS_FLAG = process.argv.includes('--debug-tokens');
+if (DEBUG_TOKENS_FLAG) {
+  config.debugTokens = true;
+}
 
 const TOKEN_LIST_URL = 'https://raw.githubusercontent.com/SmolData/tokenlists/main/arbitrum-tokenlist.json';
 
@@ -107,7 +111,10 @@ async function fetchEthPrice() {
 
 async function validateToken(token, ethPrice) {
   let address = token.address || TOKENS[token.symbol.toUpperCase()] || await TOKENS.getTokenAddress?.(token.symbol);
-  if (!address) return null;
+  if (!address) {
+    if (config.debugTokens) console.log(`❌ Skipped ${token.symbol.toUpperCase()}: no address`);
+    return null;
+  }
 
   let checksummed;
   try {
@@ -125,16 +132,22 @@ async function validateToken(token, ethPrice) {
       () => trade.validateLiquidity(weth, checksummed, token.symbol),
       2
     );
-    if (!hasLiquidity) return null;
+    if (!hasLiquidity) {
+      if (config.debugTokens) console.log(`❌ Skipped ${token.symbol.toUpperCase()}: no liquidity`);
+      return null;
+    }
 
     const price = await withRetry(
       () => trade.getTokenUsdPrice(token.symbol),
       2
     );
-    if (!price) return null;
+    if (!price) {
+      if (config.debugTokens) console.log(`❌ Skipped ${token.symbol.toUpperCase()}: price fetch failed`);
+      return null;
+    }
 
     TOKENS[token.symbol.toUpperCase()] = checksummed;
-    console.log(`✅ Validated ${token.symbol.toUpperCase()}`);
+    if (config.debugTokens) console.log(`✅ Validated ${token.symbol.toUpperCase()}`);
     return { symbol: token.symbol.toUpperCase(), address: checksummed, score: price };
   } catch (err) {
     console.warn(`⚠️ Validation failed for ${token.symbol}: ${err.message}`);
@@ -159,7 +172,11 @@ async function getValidTokens(forceRefresh = false) {
     const valid = [];
     for (const token of tokenList) {
       const res = await validateToken(token, ethPrice);
-      if (res) valid.push(res);
+      if (res) {
+        valid.push(res);
+      } else if (config.debugTokens) {
+        console.log(`❌ Skipped ${token.symbol.toUpperCase()}`);
+      }
     }
 
     console.log(`✅ Validated ${valid.length} of ${tokenList.length} tokens`);
