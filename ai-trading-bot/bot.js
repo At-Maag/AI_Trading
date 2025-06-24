@@ -11,6 +11,11 @@ const { ethers, getAddress } = require('ethers');
 const config = require('./config');
 const TOKENS = require('./tokens');
 const { getValidTokens } = require('./top25');
+const DEBUG_TOKENS_FLAG = process.argv.includes('--debug-tokens');
+if (DEBUG_TOKENS_FLAG) {
+  config.debugTokens = true;
+  console.log('🐞 Debug token logging enabled');
+}
 
 const MIN_TRADE_USD = 10;
 console.debug = () => {};
@@ -305,13 +310,19 @@ async function evaluate(prices, wethBal, ethPrice) {
     // console.log(`[${ts}] [Scan ${index + 1}/${totalScans}] === ♦ TOP 5 COINS (Highest Scores) ===`);
     // console.log(`[${ts}] Scanning ${index + 1}/${totalScans}: ${symbol}`);
     const price = prices[symbol.toLowerCase()];
-    if (!price) continue;
+    if (!price) {
+      if (config.debugTokens) console.log(`❌ Price missing for ${symbol}`);
+      continue;
+    }
     if (!history[symbol]) history[symbol] = [];
     history[symbol].push(price);
     if (history[symbol].length > 100) history[symbol].shift();
     const closing = history[symbol];
     const { score, signals } = strategy.score(closing);
     lastScores[symbol] = score;
+    if (config.debugTokens) {
+      console.log(`💡 TOKEN LOOP: ${symbol}, score: ${score}`);
+    }
     res.push({ symbol, price, score, signals, closing });
   }
   res.sort((a, b) => b.score - a.score);
@@ -327,14 +338,17 @@ async function checkTrades(entries, ethPrice, isTop) {
     }
 
     if (disabledTokens.has(symbol)) {
+      if (config.debugTokens) console.log(`⚠️ ${symbol} disabled`);
       continue;
     }
 
-  if (closing.length < 14) {
+  if (closing.length < 5) {
+    if (config.debugTokens) console.log(`❌ Insufficient candles for ${symbol}`);
     continue;
   }
 
-    if (score < 2 && !process.env.AGGRESSIVE) {
+    if (score < (config.signalThreshold || 2) && !process.env.AGGRESSIVE) {
+      if (config.debugTokens) console.log(`⚠️ No trade signal for ${symbol}`);
       continue;
     }
 
@@ -378,6 +392,9 @@ async function checkTrades(entries, ethPrice, isTop) {
           await trade.autoWrapOrUnwrap();
           res = await trade.buy(symbol, { simulate: isTop, dryRun: true });
         }
+        if (res && res.simulated) {
+          console.log(`[DRY RUN] Buy simulated for ${symbol}`);
+        }
         if (res && res.success) {
           risk.updateEntry(symbol, price);
           activeTrades[symbol] = true;
@@ -420,6 +437,9 @@ async function checkTrades(entries, ethPrice, isTop) {
             await trade.autoWrapOrUnwrap();
             res = await trade.sellToken(symbol);
           }
+        }
+        if (res && res.simulated) {
+          console.log(`[DRY RUN] Sell simulated for ${symbol}`);
         }
         if (res && res.success) {
           logTrade('SELL', symbol, 0.01, price, reason, pnl);

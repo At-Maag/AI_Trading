@@ -1,4 +1,5 @@
 const { RSI, MACD, SMA } = require('technicalindicators');
+const config = require('./config');
 
 // Calculate the most recent RSI value from an array of closing prices
 function latestRsi(closing) {
@@ -9,8 +10,10 @@ function latestRsi(closing) {
 // AI-Enhanced Momentum Breakout strategy
 // prices - array of closing prices (oldest to newest)
 function analyze(symbol, prices) {
-  if (!Array.isArray(prices) || prices.length < 14) {
-    console.error('Not enough price data provided to strategy');
+  if (!Array.isArray(prices) || prices.length < 5) {
+    if (config.debugTokens) {
+      console.log(`❌ Insufficient price history for ${symbol}`);
+    }
     return null;
   }
 
@@ -66,8 +69,13 @@ function analyze(symbol, prices) {
   }
 
   const aggressive = process.env.AGGRESSIVE === 'true';
-
-  // Previously logged signals for debugging; removed for cleaner output
+  if (config.debugTokens) {
+    if (signals.length) {
+      console.log(`✅ SIGNAL MATCH: ${symbol}: [${signals.join(', ')}]`);
+    } else {
+      console.log(`❌ No signal match for ${symbol}: signals.length = 0`);
+    }
+  }
 
   if ((aggressive && signals.length >= 2) || signals.length >= 3) {
     return { action: 'BUY', confidence: signals.length, reasons: signals };

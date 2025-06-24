@@ -19,5 +19,6 @@ module.exports = {
   prettyLogs: true,
   cacheHours: 24,
   tokenCount: 50,
-  debugTokens: true
+  debugTokens: false,
+  signalThreshold: 2
 };
