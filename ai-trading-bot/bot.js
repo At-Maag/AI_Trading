@@ -408,41 +408,7 @@ async function loop() {
       lastGroupBCheck = now;
     }
 
-    // Table 1: Holdings View
-    const portfolio = [];
-    for (const symbol of activePositions) {
-      let tokenAddr = TOKENS[symbol.toUpperCase()];
-      if (!tokenAddr && TOKENS.getTokenAddress) {
-        tokenAddr = await TOKENS.getTokenAddress(symbol);
-      }
-      if (!tokenAddr) continue;
-      const qty = await trade.getTokenBalance(tokenAddr, walletAddress, symbol);
-      if (qty <= 0) continue;
-      const buyPrice = risk.getEntry(symbol) || 0;
-      const marketPrice = prices[symbol.toLowerCase()] || 0;
-      const pnl = ((marketPrice - buyPrice) * qty).toFixed(2);
-      portfolio.push({
-        Symbol: symbol,
-        'Buy Price': `$${buyPrice.toFixed(2)}`,
-        'Market Price': `$${marketPrice.toFixed(2)}`,
-        'PnL ($)': `$${pnl}`
-      });
-    }
-
-    console.log('\n=== 📦 Portfolio Holdings ===');
-    console.table(portfolio);
-
-    // Table 2: Top 5 Signals
-    const picks = evaluations.slice(0, 5);
-    const rows = picks.map((t, idx) => [
-      String(idx + 1),
-      t.symbol,
-      `$${t.price.toFixed(2)}`,
-      t.signals && t.signals.length ? t.signals.join(', ') : '-'
-    ]);
-
-    console.log('\n=== 📊 Top 5 Picks ===');
-    console.log(formatTable(rows, ['#', 'Symbol', 'Price', 'Matched']));
+    // Display only the summary table generated in renderSummary
   } catch (err) {
     logError(`Loop failure | ${err.stack || err}`);
   }
