@@ -571,4 +571,4 @@ async function getWethBalance() {
   return getTokenBalance(WETH_ADDRESS, walletAddress, 'WETH');
 }
 
-module.exports = { buy, sellToken, getWethBalance };
+module.exports = { buy, sellToken, getWethBalance, getTokenBalance };
