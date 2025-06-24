@@ -113,7 +113,8 @@ const router = new ethers.Contract(
 const v3FactoryAbi = [
   'function getPool(address tokenA, address tokenB, uint24 fee) view returns (address)'
 ];
-const v3FactoryAddress = getAddress('0x1F98431c8ad98523631AE4a59f267346ea31F984');
+// Use a lowercase address so ethers.js applies the correct checksum
+const v3FactoryAddress = getAddress('0x1f98431c8ad98523631ae4a59f267346ea31f984');
 const v3Factory = new ethers.Contract(v3FactoryAddress, v3FactoryAbi, provider);
 const FEE_TIERS = [500, 3000, 10000]; // 0.05%, 0.3%, 1%
 
