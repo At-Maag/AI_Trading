@@ -82,7 +82,10 @@ function saveCache(tokens) {
 
 async function fetchTokenList() {
   try {
-    const { data } = await axios.get(TOKEN_LIST_URL, { timeout: 15000 });
+    const { data } = await withRetry(
+      () => axios.get(TOKEN_LIST_URL, { timeout: 15000 }),
+      3
+    );
     if (!data || !Array.isArray(data.tokens)) return [...FALLBACK_LIST];
     const list = [];
     const seen = new Set();
