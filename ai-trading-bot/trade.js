@@ -616,5 +616,6 @@ module.exports = {
   getTokenBalance,
   autoWrapOrUnwrap,
   validateLiquidity,
+  getEthPrice,
   getTokenUsdPrice
 };
