@@ -47,20 +47,19 @@ async function getTokenUsdPrice(symbol) {
   const tokenAddr = TOKENS[symbol.toUpperCase()];
   if (!tokenAddr) return null;
   if (typeof priceRouter.getAmountsOut !== 'function') {
-    console.warn('❌ Router not ready, skipping token');
+    console.warn('❌ Router ABI mismatch – getAmountsOut not found');
     return 1; // keep token valid
   }
   try {
-    const amounts = await priceRouter.getAmountsOut(
-      parseAmount(1, symbol),
-      [tokenAddr, getWethAddress()]
-    );
-    if (!amounts || !amounts[1]) return 1;
+    const amt = ethers.parseUnits('1', 18);
+    const path = [tokenAddr, getWethAddress()];
+    const amounts = await withRetry(() => priceRouter.getAmountsOut(amt, path));
+    if (!amounts || !amounts[1]) throw new Error('invalid response');
+    const ratio = Number(ethers.formatEther(amounts[1]));
     const ethPrice = await getEthPrice();
-    const ethOut = Number(ethers.formatEther(amounts[1]));
-    return ethOut * (ethPrice || 0);
+    return ethPrice ? ratio * ethPrice : ratio;
   } catch (err) {
-    console.warn(`\u274c ${symbol} price fetch failed: ${err.message}`);
+    console.warn(`❌ Failed to fetch price for ${symbol.toUpperCase()}`);
     return 1;
   }
 }
@@ -96,12 +95,12 @@ const provider = new ethers.JsonRpcProvider('https://arb1.arbitrum.io/rpc');
 const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
 const walletAddress = getAddress(wallet.address);
 
-// Basic Uniswap router for price quotes
-const UNISWAP_ROUTER = '0xE592427A0AEce92De3Edee1F18E0157C05861564';
+// Basic Uniswap V2 router for price quotes
+const UNISWAP_V2_ROUTER = '0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D';
 const priceRouterAbi = [
   'function getAmountsOut(uint amountIn, address[] memory path) view returns (uint[] memory)'
 ];
-const priceRouter = new ethers.Contract(UNISWAP_ROUTER, priceRouterAbi, provider);
+const priceRouter = new ethers.Contract(UNISWAP_V2_ROUTER, priceRouterAbi, provider);
 
 async function withRetry(fn, retries = 3, delay = 1000) {
   for (let i = 0; i < retries; i++) {
