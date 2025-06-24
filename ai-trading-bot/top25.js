@@ -146,6 +146,13 @@ async function validateToken(token, ethPrice) {
       return null;
     }
 
+    if (typeof trade.getTokenPriceHistory === 'function') {
+      const hist = await trade.getTokenPriceHistory(token.symbol);
+      if (!hist || hist.length < 14) {
+        console.log(`⚠️ Not enough price history for ${token.symbol.toUpperCase()}`);
+      }
+    }
+
     TOKENS[token.symbol.toUpperCase()] = checksummed;
     if (config.debugTokens) console.log(`✅ Validated ${token.symbol.toUpperCase()}`);
     return { symbol: token.symbol.toUpperCase(), address: checksummed, score: price };
