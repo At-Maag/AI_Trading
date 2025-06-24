@@ -11,10 +11,12 @@ require('dotenv').config();
 const TOKEN_LIST_URL =
   'https://raw.githubusercontent.com/SmolData/tokenlists/main/arbitrum-tokenlist.json';
 
-const FALLBACK_LIST = Object.entries(FALLBACK_TOKENS).map(([symbol, address]) => ({
-  symbol,
-  address
-}));
+const FALLBACK_LIST = Object.entries(FALLBACK_TOKENS)
+  .filter(([, addr]) => addr !== null)
+  .map(([symbol, address]) => ({
+    symbol,
+    address
+  }));
 
 // Minimal token set used when network calls fail completely
 const BASIC_FALLBACK = [

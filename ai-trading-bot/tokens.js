@@ -25,7 +25,7 @@ const TOKENS = {
   CRV:   safeGetAddress('0xd533a949740bb3306d119cc777fa900ba034cd52', 'CRV'),
   BAL:   safeGetAddress('0xba100000625a3754423978a60c9317c58a424e3d', 'BAL'),
   SNX:   safeGetAddress('0xc011a72400e58ecd99ee497cf89e3775d4bd732f', 'SNX'),
-  LDO:   safeGetAddress('0x5a98fcbea516cf068572fc73432788efefd76c4', 'LDO'),
+  LDO:   safeGetAddress('0x5A98FcBEA516Cf068572fF7Ef72e37A6b591C34F', 'LDO'),
   SUSHI: safeGetAddress('0x6b3595068778dd592e39a122f4f5a5cf09c90fe2', 'SUSHI'),
   AAVE:  safeGetAddress('0x078f358208685046a11c85e8ad32895ded33a249', 'AAVE'),
   COMP:  safeGetAddress('0xc00e94cb662c3520282e6f5717214004a7f26888', 'COMP'),
@@ -34,9 +34,19 @@ const TOKENS = {
   REN:   safeGetAddress('0x526fcd0a1d06f69e97bd9be0efac8ed04a1819aa', 'REN')
 };
 
+const FALLBACK_TOKENS = TOKENS;
+
 function getTokenAddress(symbol) {
   return TOKENS[symbol.toUpperCase()] || null;
 }
 
+function getValidTokens() {
+  return Object.entries(TOKENS)
+    .filter(([, addr]) => addr !== null)
+    .map(([symbol, address]) => ({ symbol, address }));
+}
+
 module.exports = TOKENS;
 module.exports.getTokenAddress = getTokenAddress;
+module.exports.getValidTokens = getValidTokens;
+module.exports.FALLBACK_TOKENS = FALLBACK_TOKENS;
