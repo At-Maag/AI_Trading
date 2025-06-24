@@ -167,7 +167,7 @@ async function ensureAllowance(tokenAddr, symbol, amount) {
     const contract = new ethers.Contract(tokenAddr, erc20Abi, wallet);
     const current = await withRetry(() => contract.allowance(walletAddress, router.target));
     if (current < amount) {
-      console.log(`[APPROVE] ${symbol}`);
+      console.debug(`[APPROVE] ${symbol}`);
       const tx = await withRetry(() => contract.approve(router.target, ethers.MaxUint256));
       await tx.wait();
     }
@@ -247,20 +247,20 @@ async function gasOkay() {
 
 async function getPairAddress(tokenA, tokenB) {
   if (DEBUG_PAIRS) {
-    console.log(`[PAIR] Searching pair for ${tokenA} ${tokenB}`);
+    console.debug(`[PAIR] Searching pair for ${tokenA} ${tokenB}`);
   }
   for (const fee of FEE_TIERS) {
     try {
       const pool = await withRetry(() => v3Factory.getPool(tokenA, tokenB, fee));
       if (pool && pool !== ethers.ZeroAddress) {
         if (DEBUG_PAIRS) {
-          console.log(`[PAIR] V3 pool ${fee} found for ${tokenA} ${tokenB}`);
+          console.debug(`[PAIR] V3 pool ${fee} found for ${tokenA} ${tokenB}`);
         }
         return { address: pool, version: 'v3' };
       }
     } catch (err) {
       if (DEBUG_PAIRS) {
-        console.log(`[PAIR] V3 search failed (${fee}): ${err.message}`);
+        console.debug(`[PAIR] V3 search failed (${fee}): ${err.message}`);
       }
     }
   }
@@ -268,16 +268,16 @@ async function getPairAddress(tokenA, tokenB) {
     const pair = await withRetry(() => factory.getPair(tokenA, tokenB));
     if (pair && pair !== ethers.ZeroAddress) {
       if (DEBUG_PAIRS) {
-        console.log(`[PAIR] V2 pair found for ${tokenA} ${tokenB}`);
+        console.debug(`[PAIR] V2 pair found for ${tokenA} ${tokenB}`);
       }
       return { address: pair, version: 'v2' };
     }
     if (DEBUG_PAIRS) {
-      console.log(`[PAIR] No pair found for ${tokenA} ${tokenB}`);
+      console.debug(`[PAIR] No pair found for ${tokenA} ${tokenB}`);
     }
   } catch (err) {
     if (DEBUG_PAIRS) {
-      console.log(`[PAIR] V2 search failed: ${err.message}`);
+      console.debug(`[PAIR] V2 search failed: ${err.message}`);
     }
   }
   return { address: ethers.ZeroAddress, version: null };
@@ -288,13 +288,13 @@ async function validateLiquidity(tokenA, tokenB, symbol) {
     let { address: pairAddr, version } = await getPairAddress(tokenA, tokenB);
     if (pairAddr === ethers.ZeroAddress && TOKENS.USDC) {
       if (DEBUG_PAIRS) {
-        console.log(`[PAIR] Retrying with USDC pair for ${symbol}`);
+        console.debug(`[PAIR] Retrying with USDC pair for ${symbol}`);
       }
       tokenA = TOKENS.USDC;
       ({ address: pairAddr, version } = await getPairAddress(tokenA, tokenB));
     }
     if (pairAddr === ethers.ZeroAddress) {
-      console.log(`\u274c No Uniswap pair found`);
+      console.debug(`\u274c No Uniswap pair found`);
       return false;
     }
     let reserve;
@@ -314,7 +314,7 @@ async function validateLiquidity(tokenA, tokenB, symbol) {
       reserve = token0.toLowerCase() === tokenA.toLowerCase() ? reserves[0] : reserves[1];
     }
     if (reserve === 0n) {
-      console.log(`\u274c Pair has zero reserves`);
+      console.debug(`\u274c Pair has zero reserves`);
       return false;
     }
     const ethPrice = await getEthPrice();
@@ -328,12 +328,12 @@ async function validateLiquidity(tokenA, tokenB, symbol) {
       liquidityUsd = Number(ethers.formatEther(reserve));
     }
     if (liquidityUsd < 50) {
-      console.log(`[LIQUIDITY] Skipped ${symbol}: liquidity < $50`);
+      console.debug(`[LIQUIDITY] Skipped ${symbol}: liquidity < $50`);
       return false;
     }
     return true;
   } catch (err) {
-    console.log(`\u274c Liquidity validation failed: ${err.message}`);
+    console.debug(`\u274c Liquidity validation failed: ${err.message}`);
     return false;
   }
 }
@@ -345,7 +345,7 @@ async function buy(token, opts = {}) {
   }
 
   if (opts.dryRun || process.env.PAPER === 'true' || DRY_RUN) {
-    console.log(`[DRY] Simulating buy for ${token}`);
+    console.debug(`[DRY] Simulating buy for ${token}`);
     return { success: true, simulated: true };
   }
 
@@ -356,23 +356,23 @@ async function buy(token, opts = {}) {
     tokenAddr = await TOKENS.getTokenAddress(token);
   }
   if (!tokenAddr) {
-    console.log('Token address is null, skipping trade.');
+    console.debug('Token address is null, skipping trade.');
     return { success: false, reason: 'no-address' };
   }
   if (DEBUG_PAIRS) {
-    console.log(`[ADDR] ${token} -> ${tokenAddr}`);
+    console.debug(`[ADDR] ${token} -> ${tokenAddr}`);
   }
 
   const wethBal = await getTokenBalance(getWethAddress(), walletAddress, 'WETH');
   if (wethBal < MIN_WETH_BAL) {
-    console.log(`🕒 [${localTime()}] ⚠️ Not enough WETH to trade`);
+    console.debug(`🕒 [${localTime()}] ⚠️ Not enough WETH to trade`);
     return { success: false, reason: 'balance' };
   }
 
   const amountEth = wethBal * 0.15;
   const ethPrice = await getEthPrice();
   if (amountEth <= 0 || (ethPrice && amountEth * ethPrice < MIN_BUY_USD)) {
-    console.log(`🕒 [${localTime()}] ⚠️ Trade amount below $${MIN_BUY_USD}`);
+    console.debug(`🕒 [${localTime()}] ⚠️ Trade amount below $${MIN_BUY_USD}`);
     return { success: false, reason: 'amount' };
   }
 
@@ -386,12 +386,12 @@ async function buy(token, opts = {}) {
   const amountParsed = parseAmount(amountEth, 'WETH');
 
   if (allowance === 0n) {
-    console.log(`🕒 [${localTime()}] 🟢 Approving WETH...`);
+    console.debug(`🕒 [${localTime()}] 🟢 Approving WETH...`);
     const approvalTx = await wethContract.approve(router.target, amountParsed);
     await approvalTx.wait();
   }
 
-  console.log(`🕒 [${localTime()}] 🟢 Swapping WETH for ${token}...`);
+  console.debug(`🕒 [${localTime()}] 🟢 Swapping WETH for ${token}...`);
   const before = await getTokenBalance(tokenAddr, walletAddress, token);
   const params = {
     tokenIn: getWethAddress(),
@@ -405,18 +405,18 @@ async function buy(token, opts = {}) {
   };
   const tx = await router.exactInputSingle(params);
   const receipt = await tx.wait();
-  console.log(`🕒 [${localTime()}] ✅ TX confirmed: ${tx.hash}`);
+  console.debug(`🕒 [${localTime()}] ✅ TX confirmed: ${tx.hash}`);
 
   const after = await getTokenBalance(tokenAddr, walletAddress, token);
   const received = after - before;
   if (received <= 0) {
-    console.log(`🕒 [${localTime()}] ❌ Buy failed – no ${token} received`);
+    console.debug(`🕒 [${localTime()}] ❌ Buy failed – no ${token} received`);
     return { success: false, reason: 'no-tokens' };
   }
 
-  console.log(`🕒 [${localTime()}] ✅ Bought ${received.toFixed(2)} ${token}`);
+  console.debug(`🕒 [${localTime()}] ✅ Bought ${received.toFixed(2)} ${token}`);
   const buyTime = new Date().toLocaleTimeString('en-US', { hour12: true, timeZone: 'America/Los_Angeles' });
-  console.log(`[BUY] ${token} for ${amountEth.toFixed(4)} ETH @ ${buyTime}`);
+  console.debug(`[BUY] ${token} for ${amountEth.toFixed(4)} ETH @ ${buyTime}`);
   appendLog({ time: new Date().toISOString(), action: 'BUY', token, amountEth: amountEth.toFixed(6), tx: tx.hash });
   return { success: true, tx: tx.hash };
 }
@@ -425,21 +425,21 @@ async function sell(amountToken, path, token, opts = {}) {
   if (token && ['ETH', 'WETH'].includes(token.toUpperCase())) {
     return { success: false, reason: 'invalid-token' };
   }
-  console.log(`🔥 Sell ${token} at ${localTime()}`);
+  console.debug(`🔥 Sell ${token} at ${localTime()}`);
   if (!await gasOkay()) return { success: false, reason: 'gas' };
   const tokenAddr = TOKENS[token.toUpperCase()];
   if (!tokenAddr) {
-    console.log("Token address is null, skipping trade.");
+    console.debug("Token address is null, skipping trade.");
     return { success: false, reason: 'no-address' };
   }
   const swapPath = [tokenAddr, getWethAddress()];
   const bal = await getTokenBalance(tokenAddr, walletAddress, token);
   if (bal <= 0) {
-    console.log(`❌ No ${token} to sell`);
+    console.debug(`❌ No ${token} to sell`);
     return { success: false, reason: 'balance' };
   }
   if (amountToken > bal) {
-    console.log(`❌ Not enough ${token} to sell`);
+    console.debug(`❌ Not enough ${token} to sell`);
     return { success: false, reason: 'balance' };
   }
   if (!await validateLiquidity(tokenAddr, getWethAddress(), token)) {
@@ -449,7 +449,7 @@ async function sell(amountToken, path, token, opts = {}) {
 
   const usdPrice = await getTokenUsdPrice(token);
   if (usdPrice && amountToken * usdPrice < MIN_TRADE_USD) {
-    console.log(`[SKIP] ${token} sell amount $${(amountToken * usdPrice).toFixed(2)} is below $${MIN_TRADE_USD} limit`);
+    console.debug(`[SKIP] ${token} sell amount $${(amountToken * usdPrice).toFixed(2)} is below $${MIN_TRADE_USD} limit`);
     return { success: false, reason: 'amount' };
   }
   await ensureAllowance(tokenAddr, token, parseAmount(amountToken, token));
@@ -462,7 +462,7 @@ async function sell(amountToken, path, token, opts = {}) {
       )
     );
     if (!amounts || !amounts[1] || amounts[1] === 0n) {
-      console.log(`\u274c Not enough liquidity for ${token}`);
+      console.debug(`\u274c Not enough liquidity for ${token}`);
       appendLog({ time: new Date().toISOString(), action: 'SKIP', token, reason: 'liquidity' });
       return { success: false, reason: 'liquidity' };
     }
@@ -470,7 +470,7 @@ async function sell(amountToken, path, token, opts = {}) {
     const wethOut = Number(ethers.formatEther(amounts[1]));
     const tradeValueUsd = wethOut * (ethPrice || 0);
     if (tradeValueUsd < MIN_TRADE_USD) {
-      console.log(`[SKIP] ${token} sell amount $${tradeValueUsd.toFixed(2)} is below $${MIN_TRADE_USD} limit`);
+      console.debug(`[SKIP] ${token} sell amount $${tradeValueUsd.toFixed(2)} is below $${MIN_TRADE_USD} limit`);
       return { success: false, reason: 'amount' };
     }
     minOut = amounts[1] * (10000n - SLIPPAGE_BPS) / 10000n;
@@ -487,13 +487,13 @@ async function sell(amountToken, path, token, opts = {}) {
       return { success: true, simulated: true };
     }
   } catch (err) {
-    console.log(`\u274c Unable to get quote for ${token}: ${err.message}`);
+    console.debug(`\u274c Unable to get quote for ${token}: ${err.message}`);
     appendLog({ time: new Date().toISOString(), action: 'SKIP', token, reason: 'liquidity' });
     return { success: false, reason: 'liquidity' };
   }
   try {
     const amt = Number(amountToken).toFixed(6);
-    console.log(`[SELL] ${token} → WETH`);
+    console.debug(`[SELL] ${token} → WETH`);
     const gasEst = await withRetry(() => router.swapExactTokensForTokens.estimateGas(
       parseAmount(amt, token),
       minOut,
@@ -501,9 +501,9 @@ async function sell(amountToken, path, token, opts = {}) {
       walletAddress,
       Math.floor(Date.now() / 1000) + 60 * 10
     ));
-    console.log(`[GAS] Estimated ${Number(gasEst)} units`);
+    console.debug(`[GAS] Estimated ${Number(gasEst)} units`);
     if (opts.dryRun || DRY_RUN) {
-      console.log('\u267B Dry run - transaction not sent');
+      console.debug('\u267B Dry run - transaction not sent');
       appendLog({ time: new Date().toISOString(), action: 'DRY-SELL', token, amountToken: amt });
       return { success: true, simulated: true };
     }
@@ -520,9 +520,9 @@ async function sell(amountToken, path, token, opts = {}) {
     const receipt = await tx.wait();
     const afterWeth = await getTokenBalance(getWethAddress(), walletAddress, 'WETH');
     const earned = afterWeth - beforeWeth;
-    console.log(`✅ Sold ${token} for ${earned.toFixed(4)} WETH`);
+    console.debug(`✅ Sold ${token} for ${earned.toFixed(4)} WETH`);
     const sellNow = new Date().toLocaleTimeString('en-US', { hour12: true, timeZone: 'America/Los_Angeles' });
-    console.log(`[SELL] ${token} for ${earned.toFixed(4)} ETH @ ${sellNow}`);
+    console.debug(`[SELL] ${token} for ${earned.toFixed(4)} ETH @ ${sellNow}`);
     appendLog({ time: new Date().toISOString(), action: 'SELL', token, amountToken: amt, tx: tx.hash });
     return { success: true, tx: tx.hash };
   } catch (err) {
@@ -537,7 +537,7 @@ async function sellToken(token) {
   const balance = await getBalance(token);
 
   if (!balance || balance === 0) {
-    console.log(`\u2718 No ${token} balance to sell`);
+    console.debug(`\u2718 No ${token} balance to sell`);
     return { success: false, reason: 'no_balance' };
   }
 
@@ -545,7 +545,7 @@ async function sellToken(token) {
   const tradeValueUsd = balance * (tokenPrice || 0);
 
   if (tradeValueUsd < 10) {
-    console.log(`[SKIP] ${token} sell value is $${tradeValueUsd.toFixed(2)}, below $10 threshold`);
+    console.debug(`[SKIP] ${token} sell value is $${tradeValueUsd.toFixed(2)}, below $10 threshold`);
     return { success: false, reason: 'too_small' };
   }
 
@@ -553,11 +553,11 @@ async function sellToken(token) {
   const GAS_THRESHOLD = 0.005;
   const receiveToken = ethBalance < GAS_THRESHOLD ? 'ETH' : 'WETH';
 
-  console.log(`\u2022 Selling ${token} \u2192 ${receiveToken}`);
-  console.log(`\u2022 Token Balance: ${balance}`);
-  console.log(`\u2022 Token Price: $${tokenPrice}`);
-  console.log(`\u2022 Est. Value: $${tradeValueUsd.toFixed(2)}`);
-  console.log(`\u2022 ETH for Gas: ${ethBalance} ETH`);
+  console.debug(`\u2022 Selling ${token} \u2192 ${receiveToken}`);
+  console.debug(`\u2022 Token Balance: ${balance}`);
+  console.debug(`\u2022 Token Price: $${tokenPrice}`);
+  console.debug(`\u2022 Est. Value: $${tradeValueUsd.toFixed(2)}`);
+  console.debug(`\u2022 ETH for Gas: ${ethBalance} ETH`);
 
   try {
     const tx = await swapExactTokenForToken({
@@ -567,14 +567,14 @@ async function sellToken(token) {
       slippage: 0.005
     });
     if (tx) {
-      console.log(`\u2713 Swap TX sent: ${tx.hash}`);
+      console.debug(`\u2713 Swap TX sent: ${tx.hash}`);
       return { success: true, tx };
     }
   } catch (err) {
-    console.log(`\u2718 Swap failed`);
+    console.debug(`\u2718 Swap failed`);
     return { success: false, reason: 'swap_failed' };
   }
-  console.log(`\u2718 Swap failed`);
+  console.debug(`\u2718 Swap failed`);
   return { success: false, reason: 'swap_failed' };
 }
 
@@ -591,7 +591,7 @@ async function autoWrapOrUnwrap() {
     const amount = parseAmount(0.01, 'WETH');
     const tx = await WETH.withdraw(amount);
     await tx.wait();
-    console.log(`✅ Unwrapped 0.01 WETH to ETH for gas`);
+    console.debug(`✅ Unwrapped 0.01 WETH to ETH for gas`);
     return;
   }
 
@@ -600,7 +600,7 @@ async function autoWrapOrUnwrap() {
     const amount = parseAmount(0.01, 'ETH');
     const tx = await WETH.deposit({ value: amount });
     await tx.wait();
-    console.log(`✅ Wrapped 0.01 ETH to WETH for trading`);
+    console.debug(`✅ Wrapped 0.01 ETH to WETH for trading`);
     return;
   }
 }

@@ -281,7 +281,6 @@ async function checkTrades(entries, ethPrice, isTop) {
   }
 
     if (score < 2 && !process.env.AGGRESSIVE) {
-      console.log(`❌ Confidence too low: ${score}`);
       continue;
     }
 
@@ -393,6 +392,43 @@ async function loop() {
       await checkTrades(evaluations.filter(e => groupB.includes(e.symbol)), ethPrice, false);
       lastGroupBCheck = now;
     }
+
+    // Table 1: Holdings View
+    const portfolio = [];
+    for (const symbol of activePositions) {
+      let tokenAddr = TOKENS[symbol.toUpperCase()];
+      if (!tokenAddr && TOKENS.getTokenAddress) {
+        tokenAddr = await TOKENS.getTokenAddress(symbol);
+      }
+      if (!tokenAddr) continue;
+      const qty = await trade.getTokenBalance(tokenAddr, walletAddress, symbol);
+      if (qty <= 0) continue;
+      const buyPrice = risk.getEntry(symbol) || 0;
+      const marketPrice = prices[symbol.toLowerCase()] || 0;
+      const pnl = ((marketPrice - buyPrice) * qty).toFixed(2);
+      portfolio.push({
+        Symbol: symbol,
+        'Buy Price': `$${buyPrice.toFixed(2)}`,
+        'Market Price': `$${marketPrice.toFixed(2)}`,
+        'PnL ($)': `$${pnl}`
+      });
+    }
+
+    console.log('\n=== 📦 Portfolio Holdings ===');
+    console.table(portfolio);
+
+    // Table 2: Top 5 Signals
+    const top5 = evaluations
+      .slice(0, 5)
+      .map(t => ({
+        Symbol: t.symbol,
+        Price: `$${t.price.toFixed(2)}`,
+        Score: t.score,
+        'Matched Signals': t.signals.join(', ')
+      }));
+
+    console.log('\n=== 📊 Top 5 Picks ===');
+    console.table(top5);
   } catch (err) {
     logError(`Loop failure | ${err.stack || err}`);
   }
