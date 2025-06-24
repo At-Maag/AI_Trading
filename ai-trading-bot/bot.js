@@ -95,7 +95,9 @@ const router = new ethers.Contract(
   wallet
 ); // placeholder address
 
-const WETH = TOKENS.WETH;
+function getWethAddress() {
+  return TOKENS.WETH;
+}
 
 const history = {};
 let paper = process.env.PAPER === 'true';
@@ -396,8 +398,9 @@ async function loop() {
   }
 }
 
-function main() {
+async function main() {
   console.log(`🚀 Bot started at ${localTime()}.`);
+  await TOKENS.load();
   refreshTokenList(true).catch(logError);
   setInterval(() => {
     refreshTokenList().catch(logError);
@@ -407,9 +410,7 @@ function main() {
   }, 60 * 1000);
 }
 
-try {
-  main();
-} catch (err) {
+main().catch(err => {
   logError(`Startup failure | ${err.stack || err}`);
-}
+});
 

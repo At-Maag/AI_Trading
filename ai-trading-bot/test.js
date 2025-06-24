@@ -17,6 +17,8 @@ const walletAddress = getAddress(wallet.address);
 async function main() {
   console.log(`🧪 Running test at ${new Date().toLocaleTimeString()} (FORCED DRY RUN)`);
 
+  await TOKENS.load();
+
   const prices = await getPrices();
   const ethPrice = prices.eth || 0;
 
