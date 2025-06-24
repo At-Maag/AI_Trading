@@ -233,18 +233,66 @@ function renderSummary(list, wethBal = 0, ethPrice = 0) {
   const wethValue = wethBal * (ethPrice || 0);
   process.stdout.write('\x1Bc');
   console.log(`[${ts}] [Scan ${fullScanCount}/14] ${color('=== ♦ TOP 5 COINS ===', 'magenta')}  [${coins.length - 1} Tokens] [WETH ${wethBal.toFixed(2)} (${formatUsd(wethValue)}) | PnL: ${pnlColored}]`);
-  const rows = top.map(r => {
-    const entry = risk.getEntry(r.symbol);
-    const pnl = entry ? (((r.price - entry) / entry) * 100).toFixed(2) + '%' : '-';
+
+  const rows = top.map((r, idx) => {
     return [
+      String(idx + 1),
       r.symbol,
       `$${r.price.toFixed(2)}`,
       String(r.score),
-      pnl,
-      r.signals.join(', ') || '-'
+      r.signals && r.signals.length ? r.signals.join(', ') : '-'
     ];
   });
-  console.log(formatTable(rows, ['Symbol', 'Price', 'Score', 'PnL', 'Matched Signals']));
+
+  console.log(formatTable(rows, ['#', 'Symbol', 'Price', 'Score', 'Matched Signals']));
+}
+
+async function getHoldings(prices) {
+  const symbols = new Set(['WETH', 'USDC', 'USDT', 'DAI']);
+  for (const s of activePositions) symbols.add(s);
+  const holdings = [];
+  for (const sym of symbols) {
+    const addr = TOKENS[sym.toUpperCase()];
+    if (!addr) continue;
+    let bal;
+    try {
+      bal = await trade.getTokenBalance(addr, walletAddress, sym);
+    } catch {
+      bal = 0;
+    }
+    if (!bal || bal <= 0) continue;
+    const price = prices[sym.toLowerCase()] || (sym === 'WETH' ? prices.eth : 0);
+    const entry = risk.getEntry(sym);
+    let pnlPct = null;
+    let pnlUsd = null;
+    if (entry && price) {
+      pnlPct = ((price - entry) / entry) * 100;
+      pnlUsd = (pnlPct / 100) * price * bal;
+    }
+    holdings.push({ symbol: sym, price, qty: bal, pnlPct, pnlUsd });
+  }
+  return holdings;
+}
+
+function renderHoldings(list) {
+  console.log(`\n${color('=== 🧾 PORTFOLIO HOLDINGS ===', 'cyan')}`);
+  if (!list.length) {
+    console.log('📭 No assets held.');
+    return;
+  }
+
+  const rows = list.map((h, idx) => {
+    const pnlStr = h.pnlPct === null ? '-' : `${h.pnlPct >= 0 ? '+' : ''}${h.pnlPct.toFixed(1)}% (${formatUsd(h.pnlUsd)})`;
+    const colored = h.pnlPct === null ? pnlStr : color(pnlStr, h.pnlPct >= 0 ? 'green' : 'red');
+    return [
+      String(idx + 1),
+      h.symbol,
+      `$${h.price.toFixed(2)}`,
+      h.qty.toFixed(2),
+      colored
+    ];
+  });
+  console.log(formatTable(rows, ['#', 'Symbol', 'Price', 'Qty', 'PnL']));
 }
 
 
@@ -269,7 +317,6 @@ async function evaluate(prices, wethBal, ethPrice) {
   res.sort((a, b) => b.score - a.score);
   groupA = res.slice(0, 5).map(r => r.symbol);
   groupB = res.slice(5).map(r => r.symbol);
-  renderSummary(res, wethBal, ethPrice);
   return res;
 }
 
@@ -393,6 +440,9 @@ async function loop() {
     if (!startWeth) startWeth = lastWethBal;
     const evaluations = await evaluate(prices, lastWethBal, prices.eth);
     const ethPrice = prices.eth;
+    renderSummary(evaluations, lastWethBal, ethPrice);
+    const holdings = await getHoldings(prices);
+    renderHoldings(holdings);
     await checkTrades(evaluations.filter(e => groupA.includes(e.symbol)), ethPrice, true);
     const now = Date.now();
     if (now - lastGroupBCheck >= 5 * 60 * 1000) {
@@ -400,7 +450,7 @@ async function loop() {
       lastGroupBCheck = now;
     }
 
-    // Display only the summary table generated in renderSummary
+    // Summary and portfolio printed above
   } catch (err) {
     logError(`Loop failure | ${err.stack || err}`);
   }
