@@ -52,6 +52,9 @@ async function refreshTokenList(initial = false, force = false) {
     validTokens = tokens.slice(0, count);
     config.coins = ['WETH', ...validTokens];
     console.log(`[${localTime()}] [TOKENS] Loaded ${validTokens.length} tradable tokens`);
+    if (config.debugTokens) {
+      console.log('Tokens:', validTokens.join(', '));
+    }
     console.log('✅ Using new list');
     return;
   }
@@ -80,6 +83,9 @@ async function refreshTokenList(initial = false, force = false) {
   }
 
   config.coins = ['WETH', ...validTokens];
+  if (config.debugTokens) {
+    console.log('Tokens:', validTokens.join(', '));
+  }
   console.log(`[${localTime()}] [TOKENS] Replaced ${toRemove.length} tokens`);
 }
 
@@ -427,17 +433,16 @@ async function loop() {
     console.table(portfolio);
 
     // Table 2: Top 5 Signals
-    const top5 = evaluations
-      .slice(0, 5)
-      .map(t => ({
-        Symbol: t.symbol,
-        Price: `$${t.price.toFixed(2)}`,
-        Score: t.score,
-        'Matched Signals': t.signals.join(', ')
-      }));
+    const picks = evaluations.slice(0, 5);
+    const rows = picks.map((t, idx) => [
+      String(idx + 1),
+      t.symbol,
+      `$${t.price.toFixed(2)}`,
+      t.signals && t.signals.length ? t.signals.join(', ') : '-'
+    ]);
 
     console.log('\n=== 📊 Top 5 Picks ===');
-    console.table(top5);
+    console.log(formatTable(rows, ['#', 'Symbol', 'Price', 'Matched']));
   } catch (err) {
     logError(`Loop failure | ${err.stack || err}`);
   }

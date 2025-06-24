@@ -32,8 +32,11 @@ async function getEthPrice() {
     return cachedEthPrice;
   }
   try {
-    const { data } = await axios.get('https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd', { timeout: 10000 });
-    cachedEthPrice = data.ethereum.usd;
+    const feedAddress = '0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612';
+    const abi = ['function latestAnswer() view returns (int256)'];
+    const feed = new ethers.Contract(feedAddress, abi, provider);
+    const price = await feed.latestAnswer();
+    cachedEthPrice = Number(price) / 1e8;
     lastEthFetch = now;
     return cachedEthPrice;
   } catch (err) {

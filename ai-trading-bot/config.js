@@ -18,5 +18,6 @@ module.exports = {
   TRADE_ALLOCATION: 0.15,
   prettyLogs: true,
   cacheHours: 24,
-  tokenCount: 50
+  tokenCount: 50,
+  debugTokens: true
 };
