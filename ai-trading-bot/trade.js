@@ -2,14 +2,26 @@ const { ethers, getAddress } = require('ethers');
 const fs = require('fs');
 const path = require('path');
 const config = require('./config');
+const logger = require('./logger');
 
-// Minimal token address mapping used by trading functions
+// Minimal token address mapping used by trading functions. This will be
+// extended with entries from tokens.json if available.
 const TOKENS = {
   WETH: '0x82af49447d8a07e3bd95bd0d56f35241523fbab1',
   USDC: '0xaf88d065e77c8cc2239327c5edb3a432268e5831',
   USDT: '0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9',
   DAI:  '0xda10009cbd5d07dd0cecc66161fc93d7c9000da1'
 };
+
+// Load dynamically validated tokens and extend address/price feed maps
+try {
+  const data = JSON.parse(fs.readFileSync(path.join(__dirname, 'tokens.json')));
+  if (Array.isArray(data)) {
+    data.forEach(t => {
+      if (t.address) TOKENS[t.symbol.toUpperCase()] = t.address;
+    });
+  }
+} catch {}
 require('dotenv').config();
 const DRY_RUN = process.env.DRY_RUN === 'true';
 const DEBUG_PAIRS = process.env.DEBUG_PAIRS === 'true';
@@ -58,6 +70,17 @@ async function getTokenUsdPrice(symbol) {
     DAI:  '0x678df3415fc31947dA4324eC63212874be5a82f8',
     ARB:  '0xb2A824043730FE05F3DA2efafa1cbBE83fa548D6'
   };
+
+  // Extend feed map with entries from tokens.json
+  try {
+    const data = JSON.parse(fs.readFileSync(path.join(__dirname, 'tokens.json')));
+    if (Array.isArray(data)) {
+      data.forEach(t => {
+        if (t.feed) feeds[t.symbol.toUpperCase()] = t.feed;
+      });
+    }
+  } catch {}
+
   const address = feeds[symbol.toUpperCase()];
   if (!address) return null;
 
@@ -209,14 +232,8 @@ async function swapExactTokenForToken({ inputToken, outputToken, amountIn, slipp
   return router.exactInputSingle(params);
 }
 
-const systemLogPath = path.join(__dirname, '..', 'logs', 'system.log');
-
 function logError(err) {
-  try { fs.mkdirSync(path.dirname(systemLogPath), { recursive: true }); } catch {}
-  const ts = localTime();
-  const msg = err instanceof Error ? err.stack || err.message : err;
-  fs.appendFileSync(systemLogPath, `[${ts}] ${msg}\n`);
-  console.error(msg);
+  logger.error(err);
 }
 
 const logPath = path.join(__dirname, '..', 'data', 'trade-log.json');
@@ -228,13 +245,12 @@ function appendLog(entry) {
   data.push(entry);
   fs.writeFileSync(logPath, JSON.stringify(data, null, 2));
 
-  try { fs.mkdirSync(path.dirname(systemLogPath), { recursive: true }); } catch {}
   let line = `[${localTime()}] ${entry.action}`;
   if (entry.token) line += ` ${entry.token}`;
   if (entry.amountEth) line += ` ${entry.amountEth}`;
   if (entry.amountToken) line += ` ${entry.amountToken}`;
   if (entry.reason) line += ` (${entry.reason})`;
-  fs.appendFileSync(systemLogPath, line + '\n');
+  logger.log(line);
 }
 
 async function gasOkay() {

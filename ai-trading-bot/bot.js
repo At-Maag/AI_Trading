@@ -1,6 +1,8 @@
 require('dotenv').config();
 const FORCE_REFRESH = process.argv.includes('--force-refresh');
+const FORCE_VALIDATE = process.argv.includes('--force-validate');
 if (FORCE_REFRESH) console.log('🔁 Forced refresh enabled');
+if (FORCE_VALIDATE) console.log('🧹 Force token validation enabled');
 const { getPrices } = require('./datafeeds');
 const strategy = require('./strategy');
 const trade = require('./trade');
@@ -10,6 +12,8 @@ const fs = require('fs');
 const path = require('path');
 const { ethers, getAddress } = require('ethers');
 const config = require('./config');
+const validateTokens = require('./tokenValidator');
+const logger = require('./logger');
 
 const MIN_TRADE_USD = 10;
 console.debug = () => {};
@@ -77,14 +81,9 @@ let startWeth = 0;
 let lastWethBal = 0;
 
 const logFile = path.join(__dirname, '..', 'data', 'trade-log.json');
-const systemLog = path.join(__dirname, '..', 'logs', 'system.log');
 
 function logError(err) {
-  try { fs.mkdirSync(path.dirname(systemLog), { recursive: true }); } catch {}
-  const ts = localTime();
-  const msg = err instanceof Error ? err.stack || err.message : err;
-  fs.appendFileSync(systemLog, `[${ts}] ${msg}\n`);
-  console.error(msg);
+  logger.error(err);
 }
 
 process.on('unhandledRejection', logError);
@@ -99,12 +98,11 @@ function logTrade(side, token, amount, price, reason, pnlPct) {
   trades.push(entry);
   fs.writeFileSync(logFile, JSON.stringify(trades, null, 2));
 
-  try { fs.mkdirSync(path.dirname(systemLog), { recursive: true }); } catch {}
   const emoji = '💰';
   let line = `${emoji} [${localTime()}] ${side} ${token} ${amount} @ $${price}`;
   if (reason) line += ` (${reason})`;
   if (typeof pnlPct === 'number') line += ` PnL ${pnlPct.toFixed(2)}%`;
-  fs.appendFileSync(systemLog, line + '\n');
+  logger.log(line);
 }
 
 const failureTimestamps = {};
@@ -417,6 +415,14 @@ async function loop() {
 
 async function main() {
   console.log(`🚀 Bot started at ${localTime()}.`);
+
+  // Validate tokens if needed and update config.coins
+  const validated = await validateTokens(FORCE_VALIDATE);
+  if (Array.isArray(validated) && validated.length) {
+    const syms = validated.map(t => t.symbol.toUpperCase());
+    config.coins = Array.from(new Set(['WETH', ...syms]));
+  }
+
   await trade.autoWrapOrUnwrap();
   setInterval(() => {
     loop().catch(logError);
