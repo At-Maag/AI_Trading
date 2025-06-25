@@ -86,7 +86,7 @@ const v3PoolAbi = [
 ];
 
 // Connect to Arbitrum
-const provider = new ethers.JsonRpcProvider(process.env.ARB_RPC_URL || 'https://arb1.arbitrum.io/rpc');
+const provider = new ethers.JsonRpcProvider(process.env.ARB_RPC_URL);
 const rawKey = process.env.PRIVATE_KEY ? process.env.PRIVATE_KEY.trim() : '';
 const wallet = new ethers.Wallet(rawKey.startsWith('0x') ? rawKey : '0x' + rawKey, provider);
 const walletAddress = getAddress(wallet.address);
