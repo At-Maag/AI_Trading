@@ -7,3 +7,11 @@ The project uses `ethers` to interact with the Arbitrum network and `technicalin
 If the bot cannot download the latest token lists due to network restrictions, it
 falls back to a small built-in list containing WETH, USDC, USDT, DAI and WBTC so
 that basic testing can proceed offline.
+
+To manually verify tokens you can run:
+
+```bash
+node ai-trading-bot/validateTokens.js
+```
+
+The script checks each token's address, liquidity on Uniswap and USD price using Chainlink feeds and prints a summary.
