@@ -32,7 +32,7 @@ const BASIC_FALLBACK = [
   { symbol: 'DAI', address: TOKENS.DAI },
 ];
 
-const provider = new ethers.JsonRpcProvider('https://arb1.arbitrum.io/rpc');
+const provider = new ethers.JsonRpcProvider(process.env.ARB_RPC_URL || 'https://arb1.arbitrum.io/rpc');
 const CACHE_FILE = path.join(__dirname, '..', 'data', 'tokens.json');
 
 function withRetry(fn, retries = 2) {

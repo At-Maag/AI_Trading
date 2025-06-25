@@ -44,30 +44,19 @@ async function getEthPrice() {
 }
 
 async function getTokenUsdPrice(symbol) {
-  const tokenAddr = TOKENS[symbol.toUpperCase()];
-  if (!tokenAddr) return null;
-  const weth = getWethAddress();
-  if (symbol.toUpperCase() === 'WETH' || tokenAddr.toLowerCase() === weth.toLowerCase()) {
-    return getEthPrice();
-  }
-  if (typeof priceRouter.getAmountsOut !== 'function') {
-    console.warn('❌ Router ABI mismatch – getAmountsOut not found');
-    return 1; // keep token valid even if router fails
-  }
-  try {
-    const amt = ethers.parseUnits('1', 18);
-    const path = [tokenAddr, weth];
-    const amounts = await withRetry(() => priceRouter.getAmountsOut(amt, path), 3);
-    if (!amounts || !amounts[1]) throw new Error('invalid response');
-    const ratio = Number(ethers.formatEther(amounts[1]));
-    const ethPrice = await getEthPrice();
-    const usd = ethPrice ? ratio * ethPrice : ratio;
-    console.log(`✅ ${symbol.toUpperCase()}: price = $${usd.toFixed(2)}`);
-    return usd;
-  } catch (err) {
-    console.warn(`❌ Failed to fetch price for ${symbol.toUpperCase()}`);
-    return 1; // fallback score so token isn't removed
-  }
+  const feeds = {
+    ETH:  '0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612',
+    USDC: '0xfdDB631F5ee37a4bE5bC0a85B59B9c429f9eD6d7',
+    USDT: '0x3f3f5dF88dC9F13eac63DF89EC16ef6e7E25DdE7',
+    DAI:  '0x6Df09E975c830ECae5bd4eD9d90f3A95a4f88012',
+    ARB:  '0x1bAf1eC65f2F41F2bF4FeD927DD1e1e92DA6713b'
+  };
+  const address = feeds[symbol.toUpperCase()];
+  if (!address) return null;
+
+  const feed = new ethers.Contract(address, ['function latestAnswer() view returns (int256)'], provider);
+  const raw = await feed.latestAnswer();
+  return Number(raw) / 1e8;
 }
 
 // Minimal ABI for Uniswap V3 router
@@ -97,16 +86,10 @@ const v3PoolAbi = [
 ];
 
 // Connect to Arbitrum
-const provider = new ethers.JsonRpcProvider('https://arb1.arbitrum.io/rpc');
-const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
+const provider = new ethers.JsonRpcProvider(process.env.ARB_RPC_URL || 'https://arb1.arbitrum.io/rpc');
+const rawKey = process.env.PRIVATE_KEY ? process.env.PRIVATE_KEY.trim() : '';
+const wallet = new ethers.Wallet(rawKey.startsWith('0x') ? rawKey : '0x' + rawKey, provider);
 const walletAddress = getAddress(wallet.address);
-
-// Basic Uniswap V2 router for price quotes
-const UNISWAP_V2_ROUTER = '0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D';
-const priceRouterAbi = [
-  'function getAmountsOut(uint amountIn, address[] memory path) view returns (uint[] memory)'
-];
-const priceRouter = new ethers.Contract(UNISWAP_V2_ROUTER, priceRouterAbi, provider);
 
 async function withRetry(fn, retries = 3, delay = 1000) {
   for (let i = 0; i < retries; i++) {
@@ -124,8 +107,9 @@ async function withRetry(fn, retries = 3, delay = 1000) {
   }
 }
 // Uniswap V3 Universal Router on Arbitrum
+const UNISWAP_ARBITRUM_ROUTER = '0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45';
 const router = new ethers.Contract(
-  getAddress('0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45'),
+  getAddress(UNISWAP_ARBITRUM_ROUTER),
   routerAbi,
   wallet
 );
@@ -301,6 +285,18 @@ async function getPairAddress(tokenA, tokenB) {
     }
   }
   return { address: ethers.ZeroAddress, version: null };
+}
+
+// Quick sanity check before attempting a trade
+async function validateTokenBeforeTrade(symbol, tokenAddress, wethAddress) {
+  try {
+    const pair = await factory.getPair(tokenAddress, wethAddress);
+    if (pair === ethers.ZeroAddress) return false;
+    const price = await getTokenUsdPrice(symbol);
+    return price && price > 0;
+  } catch {
+    return false;
+  }
 }
 
 async function validateLiquidity(tokenA, tokenB, symbol) {
@@ -632,6 +628,7 @@ module.exports = {
   getTokenBalance,
   autoWrapOrUnwrap,
   validateLiquidity,
+  validateTokenBeforeTrade,
   getEthPrice,
   getTokenUsdPrice
 };
