@@ -2,7 +2,14 @@ const { ethers, getAddress } = require('ethers');
 const fs = require('fs');
 const path = require('path');
 const config = require('./config');
-const TOKENS = require('./tokens');
+
+// Minimal token address mapping used by trading functions
+const TOKENS = {
+  WETH: '0x82af49447d8a07e3bd95bd0d56f35241523fbab1',
+  USDC: '0xaf88d065e77c8cc2239327c5edb3a432268e5831',
+  USDT: '0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9',
+  DAI:  '0xda10009cbd5d07dd0cecc66161fc93d7c9000da1'
+};
 require('dotenv').config();
 const DRY_RUN = process.env.DRY_RUN === 'true';
 const DEBUG_PAIRS = process.env.DEBUG_PAIRS === 'true';
@@ -182,14 +189,8 @@ async function ensureAllowance(tokenAddr, symbol, amount) {
 }
 
 async function swapExactTokenForToken({ inputToken, outputToken, amountIn, slippage }) {
-  let inAddr = TOKENS[inputToken.toUpperCase()];
-  if (!inAddr && TOKENS.getTokenAddress) {
-    inAddr = await TOKENS.getTokenAddress(inputToken);
-  }
-  let outAddr = TOKENS[outputToken.toUpperCase()];
-  if (!outAddr && TOKENS.getTokenAddress) {
-    outAddr = await TOKENS.getTokenAddress(outputToken);
-  }
+  const inAddr = TOKENS[inputToken.toUpperCase()];
+  const outAddr = TOKENS[outputToken.toUpperCase()];
   if (outputToken === 'ETH') outAddr = getWethAddress();
   if (!inAddr || !outAddr) throw new Error('Invalid token symbol');
   const amountParsed = parseAmount(amountIn, inputToken);
@@ -208,18 +209,17 @@ async function swapExactTokenForToken({ inputToken, outputToken, amountIn, slipp
   return router.exactInputSingle(params);
 }
 
-const errorLogPath = path.join(__dirname, '..', 'logs', 'error-log.txt');
+const systemLogPath = path.join(__dirname, '..', 'logs', 'system.log');
 
 function logError(err) {
-  try { fs.mkdirSync(path.dirname(errorLogPath), { recursive: true }); } catch {}
+  try { fs.mkdirSync(path.dirname(systemLogPath), { recursive: true }); } catch {}
   const ts = localTime();
   const msg = err instanceof Error ? err.stack || err.message : err;
-  fs.appendFileSync(errorLogPath, `[${ts}] ${msg}\n`);
+  fs.appendFileSync(systemLogPath, `[${ts}] ${msg}\n`);
   console.error(msg);
 }
 
 const logPath = path.join(__dirname, '..', 'data', 'trade-log.json');
-const tradeLogTxt = path.join(__dirname, '..', 'logs', 'trade-log.txt');
 
 function appendLog(entry) {
   try { fs.mkdirSync(path.dirname(logPath), { recursive: true }); } catch {}
@@ -228,13 +228,13 @@ function appendLog(entry) {
   data.push(entry);
   fs.writeFileSync(logPath, JSON.stringify(data, null, 2));
 
-  try { fs.mkdirSync(path.dirname(tradeLogTxt), { recursive: true }); } catch {}
+  try { fs.mkdirSync(path.dirname(systemLogPath), { recursive: true }); } catch {}
   let line = `[${localTime()}] ${entry.action}`;
   if (entry.token) line += ` ${entry.token}`;
   if (entry.amountEth) line += ` ${entry.amountEth}`;
   if (entry.amountToken) line += ` ${entry.amountToken}`;
   if (entry.reason) line += ` (${entry.reason})`;
-  fs.appendFileSync(tradeLogTxt, line + '\n');
+  fs.appendFileSync(systemLogPath, line + '\n');
 }
 
 async function gasOkay() {
@@ -367,10 +367,7 @@ async function buy(token, opts = {}) {
 
   if (!await gasOkay()) return { success: false, reason: 'gas' };
 
-  let tokenAddr = TOKENS[token.toUpperCase()];
-  if (!tokenAddr && TOKENS.getTokenAddress) {
-    tokenAddr = await TOKENS.getTokenAddress(token);
-  }
+  const tokenAddr = TOKENS[token.toUpperCase()];
   if (!tokenAddr) {
     console.debug('Token address is null, skipping trade.');
     return { success: false, reason: 'no-address' };
@@ -630,5 +627,7 @@ module.exports = {
   validateLiquidity,
   validateTokenBeforeTrade,
   getEthPrice,
-  getTokenUsdPrice
+  getTokenUsdPrice,
+  TOKENS,
+  logError
 };

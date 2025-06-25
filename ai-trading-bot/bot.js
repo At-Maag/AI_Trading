@@ -4,18 +4,12 @@ if (FORCE_REFRESH) console.log('🔁 Forced refresh enabled');
 const { getPrices } = require('./datafeeds');
 const strategy = require('./strategy');
 const trade = require('./trade');
+const { TOKENS } = trade;
 const risk = require('./risk');
 const fs = require('fs');
 const path = require('path');
 const { ethers, getAddress } = require('ethers');
 const config = require('./config');
-const TOKENS = require('./tokens');
-const { getValidTokens } = require('./top25');
-const DEBUG_TOKENS_FLAG = process.argv.includes('--debug-tokens');
-if (DEBUG_TOKENS_FLAG) {
-  config.debugTokens = true;
-  console.log('🐞 Debug token logging enabled');
-}
 
 const MIN_TRADE_USD = 10;
 console.debug = () => {};
@@ -42,58 +36,9 @@ const rawKey = process.env.PRIVATE_KEY ? process.env.PRIVATE_KEY.trim() : '';
 const wallet = new ethers.Wallet(rawKey.startsWith('0x') ? rawKey : '0x' + rawKey, provider);
 const walletAddress = getAddress(wallet.address);
 
-let validTokens = [];
 const activePositions = new Set();
 const lastScores = {};
 
-async function refreshTokenList(initial = false, force = false) {
-  if (force) console.log('🔁 Forced refresh');
-  const list = await getValidTokens(force);
-  if (!list || !list.length) return;
-  list.sort((a, b) => b.score - a.score);
-  const count = config.tokenCount || 50;
-  const tokens = list.slice(0, count).map(t => t.symbol);
-
-  if (initial || !validTokens.length) {
-    validTokens = tokens.slice(0, count);
-    config.coins = ['WETH', ...validTokens];
-    console.log(`[${localTime()}] [TOKENS] Loaded ${validTokens.length} tradable tokens`);
-    if (config.debugTokens) {
-      console.log('Tokens:', validTokens.join(', '));
-    }
-    console.log('✅ Using new list');
-    return;
-  }
-
-  const candidates = tokens.filter(t => !validTokens.includes(t));
-  const sortable = validTokens.filter(t => !activePositions.has(t));
-  sortable.sort((a, b) => (lastScores[a] || 0) - (lastScores[b] || 0));
-
-  const replaceCount = Math.min(10, candidates.length, sortable.length);
-  const toRemove = sortable.slice(0, replaceCount);
-  const toAdd = candidates.slice(0, replaceCount);
-
-  validTokens = validTokens.filter(t => !toRemove.includes(t));
-  validTokens.push(...toAdd);
-  const limit = config.tokenCount || 50;
-  validTokens = validTokens.slice(0, limit);
-
-  const prices = await getPrices();
-  for (const symbol of toAdd) {
-    const price = prices[symbol.toLowerCase()];
-    if (price) {
-      if (!history[symbol]) history[symbol] = [];
-      history[symbol].push(price, price);
-      history[symbol] = history[symbol].slice(-2);
-    }
-  }
-
-  config.coins = ['WETH', ...validTokens];
-  if (config.debugTokens) {
-    console.log('Tokens:', validTokens.join(', '));
-  }
-  console.log(`[${localTime()}] [TOKENS] Replaced ${toRemove.length} tokens`);
-}
 
 async function withRetry(fn, retries = 3, delay = 1000) {
   for (let i = 0; i < retries; i++) {
@@ -132,14 +77,13 @@ let startWeth = 0;
 let lastWethBal = 0;
 
 const logFile = path.join(__dirname, '..', 'data', 'trade-log.json');
-const tradeLogTxt = path.join(__dirname, '..', 'logs', 'trade-log.txt');
-const crashFile = path.join(__dirname, '..', 'logs', 'error-log.txt');
+const systemLog = path.join(__dirname, '..', 'logs', 'system.log');
 
 function logError(err) {
-  try { fs.mkdirSync(path.dirname(crashFile), { recursive: true }); } catch {}
+  try { fs.mkdirSync(path.dirname(systemLog), { recursive: true }); } catch {}
   const ts = localTime();
   const msg = err instanceof Error ? err.stack || err.message : err;
-  fs.appendFileSync(crashFile, `[${ts}] ${msg}\n`);
+  fs.appendFileSync(systemLog, `[${ts}] ${msg}\n`);
   console.error(msg);
 }
 
@@ -155,12 +99,12 @@ function logTrade(side, token, amount, price, reason, pnlPct) {
   trades.push(entry);
   fs.writeFileSync(logFile, JSON.stringify(trades, null, 2));
 
-  try { fs.mkdirSync(path.dirname(tradeLogTxt), { recursive: true }); } catch {}
+  try { fs.mkdirSync(path.dirname(systemLog), { recursive: true }); } catch {}
   const emoji = '💰';
   let line = `${emoji} [${localTime()}] ${side} ${token} ${amount} @ $${price}`;
   if (reason) line += ` (${reason})`;
   if (typeof pnlPct === 'number') line += ` PnL ${pnlPct.toFixed(2)}%`;
-  fs.appendFileSync(tradeLogTxt, line + '\n');
+  fs.appendFileSync(systemLog, line + '\n');
 }
 
 const failureTimestamps = {};
@@ -301,42 +245,6 @@ function renderHoldings(list) {
   console.log(formatTable(rows, ['#', 'Symbol', 'Price', 'Qty', 'PnL']));
 }
 
-async function runTokenTests() {
-  const cache = path.join(__dirname, '..', 'data', 'tokens.json');
-  let tokens;
-  try {
-    tokens = JSON.parse(fs.readFileSync(cache));
-  } catch {
-    console.log('⚠️ No cached tokens to validate');
-    return;
-  }
-  let success = 0;
-  const failures = [];
-  for (const t of tokens) {
-    let addr;
-    try {
-      addr = getAddress(t.address);
-    } catch {
-      failures.push(`${t.symbol} failed (invalid address)`);
-      continue;
-    }
-    const liq = await trade.validateLiquidity(TOKENS.WETH, addr, t.symbol);
-    if (!liq) {
-      failures.push(`${t.symbol} failed (no liquidity)`);
-      continue;
-    }
-    const price = await trade.getTokenUsdPrice(t.symbol);
-    if (!price) {
-      failures.push(`${t.symbol} failed (price fetch failed)`);
-      continue;
-    }
-    success++;
-  }
-  console.log(`✅ ${success}/${tokens.length} tokens validated successfully.`);
-  failures.forEach(f => console.log(`❌ ${f}`));
-}
-
-
 async function evaluate(prices, wethBal, ethPrice) {
   const res = [];
   const coins = [...new Set([...config.coins, ...activePositions])];
@@ -410,10 +318,7 @@ async function checkTrades(entries, ethPrice, isTop) {
           continue;
         }
 
-        let tokenAddr = TOKENS[symbol.toUpperCase()];
-        if (!tokenAddr && TOKENS.getTokenAddress) {
-          tokenAddr = await TOKENS.getTokenAddress(symbol);
-        }
+        const tokenAddr = TOKENS[symbol.toUpperCase()];
         if (!tokenAddr) {
           console.log("Token address is null, skipping trade.");
           continue;
@@ -453,30 +358,24 @@ async function checkTrades(entries, ethPrice, isTop) {
         let res;
         if (!paper) {
           try {
-            let tokenAddr = TOKENS[symbol.toUpperCase()];
-            if (!tokenAddr && TOKENS.getTokenAddress) {
-              tokenAddr = await TOKENS.getTokenAddress(symbol);
-            }
-            if (!tokenAddr) {
-              console.log("Token address is null, skipping trade.");
-            } else {
-              await trade.autoWrapOrUnwrap();
-              res = await trade.sellToken(symbol);
-              if (!res.success) recordFailure(symbol, res.reason);
-            }
+        let tokenAddr = TOKENS[symbol.toUpperCase()];
+        if (!tokenAddr) {
+          console.log("Token address is null, skipping trade.");
+        } else {
+          await trade.autoWrapOrUnwrap();
+          res = await trade.sellToken(symbol);
+          if (!res.success) recordFailure(symbol, res.reason);
+        }
           } catch (err) {
             logError(`Failed to trade ${symbol} \u2192 ETH | ${err.message}`);
             recordFailure(symbol, err.message);
           }
         } else {
-          let tokenAddr = TOKENS[symbol.toUpperCase()];
-          if (!tokenAddr && TOKENS.getTokenAddress) {
-            tokenAddr = await TOKENS.getTokenAddress(symbol);
-          }
-          if (tokenAddr) {
-            await trade.autoWrapOrUnwrap();
-            res = await trade.sellToken(symbol);
-          }
+        let tokenAddr = TOKENS[symbol.toUpperCase()];
+        if (tokenAddr) {
+          await trade.autoWrapOrUnwrap();
+          res = await trade.sellToken(symbol);
+        }
         }
         if (res && res.simulated) {
           console.log(`[DRY RUN] Sell simulated for ${symbol}`);
@@ -518,12 +417,7 @@ async function loop() {
 
 async function main() {
   console.log(`🚀 Bot started at ${localTime()}.`);
-  await TOKENS.load();
-  await refreshTokenList(true, FORCE_REFRESH).catch(logError);
-  await runTokenTests();
-  setInterval(() => {
-    refreshTokenList().catch(logError);
-  }, 60 * 60 * 1000);
+  await trade.autoWrapOrUnwrap();
   setInterval(() => {
     loop().catch(logError);
   }, 60 * 1000);
