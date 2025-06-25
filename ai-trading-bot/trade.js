@@ -46,10 +46,10 @@ async function getEthPrice() {
 async function getTokenUsdPrice(symbol) {
   const feeds = {
     ETH:  '0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612',
-    USDC: '0xfdDB631F5ee37a4bE5bC0a85B59B9c429f9eD6d7',
+    USDC: '0x6ce185860a4963106506C203335A2910413708e9',
     USDT: '0x3f3f5dF88dC9F13eac63DF89EC16ef6e7E25DdE7',
-    DAI:  '0x6Df09E975c830ECae5bd4eD9d90f3A95a4f88012',
-    ARB:  '0x1bAf1eC65f2F41F2bF4FeD927DD1e1e92DA6713b'
+    DAI:  '0x678df3415fc31947dA4324eC63212874be5a82f8',
+    ARB:  '0xb2A824043730FE05F3DA2efafa1cbBE83fa548D6'
   };
   const address = feeds[symbol.toUpperCase()];
   if (!address) return null;
