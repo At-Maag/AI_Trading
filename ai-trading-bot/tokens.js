@@ -27,7 +27,7 @@ const TOKENS = {
   CRV:   safeGetAddress('0x11cdb42b0eb46d95f990bedd4695a6e3fa034978', 'CRV'),
   SUSHI: safeGetAddress('0x39c437d2ce831f0aa0eae7f46424a8f424b2b548', 'SUSHI'),
   BAL:   safeGetAddress('0x040d1edc9569d4bab2d15287dc5a4f10f56a56b8', 'BAL'),
-  LDO:   safeGetAddress('0xb766039cc6db368759c1e56b79affe831d0cc507', 'LDO'),
+  LDO:   safeGetAddress('0x5A98FcBEA516Cf06857215779Fd812CA3bef1B32', 'LDO'),
   COMP:  safeGetAddress('0xf2a52fe0dceaddadf621a66e7c6c0e9d3e1946ce', 'COMP'),
   GRT:   safeGetAddress('0xc944e90c64b2c07662a292be6244bdf05cda44a7', 'GRT'),
   JONES: safeGetAddress('0x10393c20975cf177a3513071bc110f7962cd67da', 'JONES'),

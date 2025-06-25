@@ -46,13 +46,17 @@ async function getEthPrice() {
 async function getTokenUsdPrice(symbol) {
   const tokenAddr = TOKENS[symbol.toUpperCase()];
   if (!tokenAddr) return null;
+  const weth = getWethAddress();
+  if (symbol.toUpperCase() === 'WETH' || tokenAddr.toLowerCase() === weth.toLowerCase()) {
+    return getEthPrice();
+  }
   if (typeof priceRouter.getAmountsOut !== 'function') {
     console.warn('❌ Router ABI mismatch – getAmountsOut not found');
     return 1; // keep token valid even if router fails
   }
   try {
     const amt = ethers.parseUnits('1', 18);
-    const path = [tokenAddr, getWethAddress()];
+    const path = [tokenAddr, weth];
     const amounts = await withRetry(() => priceRouter.getAmountsOut(amt, path), 3);
     if (!amounts || !amounts[1]) throw new Error('invalid response');
     const ratio = Number(ethers.formatEther(amounts[1]));
@@ -62,7 +66,7 @@ async function getTokenUsdPrice(symbol) {
     return usd;
   } catch (err) {
     console.warn(`❌ Failed to fetch price for ${symbol.toUpperCase()}`);
-    return 1; // fallback
+    return 1; // fallback score so token isn't removed
   }
 }
 
