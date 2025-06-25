@@ -1,31 +1,19 @@
 require('dotenv').config();
 const { ethers } = require('ethers');
-const { getValidTokens } = require('./top25');
 const TOKENS = require('./tokens');
-
-// Handle keys with or without 0x prefix
-const rawKey = (process.env.PRIVATE_KEY || '').trim();
-const key = rawKey.startsWith('0x') ? rawKey : '0x' + rawKey;
+const { getValidTokens } = require('./top25');
 
 // Connect to Arbitrum
-const provider = new ethers.JsonRpcProvider(process.env.ARB_RPC_URL || 'https://arb1.arbitrum.io/rpc');
-const wallet = new ethers.Wallet(key, provider);
+const provider = new ethers.JsonRpcProvider(process.env.ARB_RPC_URL);
 
-// Uniswap V3 Universal Router (used only to verify connectivity)
-const router = new ethers.Contract(
-  '0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45',
-  ['function exactInputSingle((address,address,uint24,address,uint256,uint256,uint160)) payable returns (uint256)'],
-  wallet
-);
-
-// Chainlink price feeds for a few core tokens
+// Chainlink price feeds for Arbitrum
 async function getTokenUsdPrice(symbol) {
   const feeds = {
     ETH:  '0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612',
-    USDC: '0xfdDB631F5ee37a4bE5bC0a85B59B9c429f9eD6d7',
+    USDC: '0x6ce185860a4963106506C203335A2910413708e9',
     USDT: '0x3f3f5dF88dC9F13eac63DF89EC16ef6e7E25DdE7',
-    DAI:  '0x6Df09E975c830ECae5bd4eD9d90f3A95a4f88012',
-    ARB:  '0x1bAf1eC65f2F41F2bF4FeD927DD1e1e92DA6713b'
+    DAI:  '0x678df3415fc31947dA4324eC63212874be5a82f8',
+    ARB:  '0xb2A824043730FE05F3DA2efafa1cbBE83fa548D6'
   };
   const addr = feeds[symbol.toUpperCase()];
   if (!addr) return null;
@@ -34,31 +22,47 @@ async function getTokenUsdPrice(symbol) {
   return Number(raw) / 1e8;
 }
 
-// Simple Uniswap pair existence + price check
-async function validateTokenBeforeTrade(symbol, tokenAddress, wethAddress) {
-  if (!tokenAddress || !wethAddress) return false;
+// Validate token by address checksum, Chainlink price and V3 pool existence
+async function validateToken(symbol, address, weth) {
+  let checksummed;
+  try {
+    checksummed = ethers.getAddress(address);
+  } catch {
+    console.log(`❌ Invalid address: ${symbol}`);
+    return false;
+  }
+
+  const price = await getTokenUsdPrice(symbol);
+  if (!price || price <= 0) {
+    console.log(`❌ No Chainlink price: ${symbol}`);
+    return false;
+  }
 
   const factory = new ethers.Contract(
-    '0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f',
-    ['function getPair(address,address) external view returns (address)'],
+    '0x1f98431c8ad98523631ae4a59f267346ea31f984',
+    ['function getPool(address,address,uint24) view returns (address)'],
     provider
   );
 
-  try {
-    const pair = await factory.getPair(tokenAddress, wethAddress);
-    if (!pair || pair === ethers.ZeroAddress) return false;
-    const price = await getTokenUsdPrice(symbol);
-    return price && price > 0;
-  } catch (err) {
-    console.warn(`❌ Token validation failed: ${symbol} | ${err.message}`);
-    return false;
+  const fees = [500, 3000, 10000];
+  for (const fee of fees) {
+    try {
+      const pool = await factory.getPool(weth, checksummed, fee);
+      if (pool && pool !== ethers.ZeroAddress) {
+        console.log(`✅ ${symbol}: price $${price}, V3 pool found`);
+        return true;
+      }
+    } catch {}
   }
+
+  console.log(`❌ No V3 pool for ${symbol}`);
+  return false;
 }
 
 async function runTokenValidation(tokenList, wethAddress) {
   let success = 0;
   for (const { symbol, address } of tokenList) {
-    const ok = await validateTokenBeforeTrade(symbol, address, wethAddress);
+    const ok = await validateToken(symbol, address, wethAddress);
     if (ok) {
       console.log(`✅ ${symbol} passed`);
       success++;
