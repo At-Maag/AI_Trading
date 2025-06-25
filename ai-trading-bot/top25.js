@@ -243,3 +243,14 @@ function getTop25TradableTokens(forceRefresh = false) {
 }
 
 module.exports = { getValidTokens, getTop25TradableTokens };
+
+// Allow manual execution: `node top25.js [--force-refresh]`
+if (require.main === module) {
+  const force = process.argv.includes('--force-refresh');
+  getValidTokens(force)
+    .then(list => {
+      console.log(`\u2705 Loaded ${list.length} tokens`);
+      list.forEach(t => console.log(`• ${t.symbol} ($${t.score})`));
+    })
+    .catch(err => console.error('Token fetch failed:', err.message));
+}
