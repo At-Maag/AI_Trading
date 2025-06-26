@@ -5,7 +5,7 @@ require('dotenv').config();
 
 const tokenListPath = path.join(__dirname, 'data', 'arbitrum.tokenlist.json');
 const feedsPath = path.join(__dirname, 'data', 'feeds.json');
-const tokensFile = path.join(__dirname, 'tokens.json');
+const tokensFile = path.join(__dirname, 'data', 'tokens.json');
 
 // Remove legacy rawTokens.json if present
 const legacyFile = path.join(__dirname, 'rawTokens.json');

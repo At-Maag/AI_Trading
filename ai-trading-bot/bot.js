@@ -14,9 +14,10 @@ const { ethers, getAddress } = require('ethers');
 const { validateTokens } = require('./validator');
 const DEBUG_TOKENS = process.env.DEBUG_TOKENS === 'true';
 
-const tokensPath = path.join(__dirname, 'tokens.json');
+const tokensPath = path.join(__dirname, 'data', 'tokens.json');
 let tokensData = [];
 let coins = ['WETH'];
+let allTokens = [];
 const SIGNAL_THRESHOLD = 2;
 try {
   tokensData = JSON.parse(fs.readFileSync(tokensPath));
@@ -25,9 +26,33 @@ if (!Array.isArray(tokensData) || tokensData.length === 0) {
   console.error('tokens.json missing or empty. Run "node validator.js" first.');
   process.exit(1);
 }
+allTokens = tokensData.map(t => t.symbol.toUpperCase());
 
 const MIN_TRADE_USD = 10;
 console.debug = () => {};
+
+async function refreshTopTokens() {
+  const ethPrice = await trade.getEthPrice();
+  const prices = { eth: ethPrice };
+  for (const sym of allTokens) {
+    const p = sym === 'WETH' ? ethPrice : await trade.getTokenUsdPrice(sym);
+    if (p) prices[sym.toLowerCase()] = p;
+  }
+  const evaluations = [];
+  for (const sym of allTokens) {
+    const price = prices[sym.toLowerCase()];
+    if (!price) continue;
+    if (!history[sym]) history[sym] = [];
+    history[sym].push(price);
+    if (history[sym].length > 100) history[sym].shift();
+    const { score } = strategy.score(history[sym]);
+    evaluations.push({ symbol: sym, score });
+  }
+  evaluations.sort((a, b) => b.score - a.score);
+  const top = evaluations.slice(0, 25).map(e => e.symbol);
+  coins = Array.from(new Set(['WETH', ...top]));
+  console.log(`[REFRESH] Tracking ${top.length} tokens`);
+}
 
 function localTime() {
   return new Date().toLocaleTimeString('en-US', {
@@ -446,10 +471,13 @@ async function main() {
   const validated = await validateTokens(FORCE_VALIDATE);
   if (Array.isArray(validated) && validated.length) {
     const syms = validated.map(t => t.symbol.toUpperCase());
-    coins = Array.from(new Set(['WETH', ...syms]));
+    allTokens = syms;
   }
+  if (!allTokens.length) allTokens = tokensData.map(t => t.symbol.toUpperCase());
 
   await trade.autoWrapOrUnwrap();
+  await refreshTopTokens();
+  setInterval(refreshTopTokens, 60 * 60 * 1000);
   setInterval(() => {
     loop().catch(logError);
   }, 60 * 1000);
