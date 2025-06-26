@@ -16,7 +16,7 @@ const TOKENS = {
 
 // Load dynamically validated tokens and extend address/price feed maps
 try {
-  const data = JSON.parse(fs.readFileSync(path.join(__dirname, 'tokens.json')));
+  const data = JSON.parse(fs.readFileSync(path.join(__dirname, 'data', 'tokens.json')));
   if (Array.isArray(data)) {
     data.forEach(t => {
       if (t.address) TOKENS[t.symbol.toUpperCase()] = t.address;
@@ -82,7 +82,7 @@ async function getTokenUsdPrice(symbol) {
 
   // Extend feed map with entries from tokens.json
   try {
-    const data = JSON.parse(fs.readFileSync(path.join(__dirname, 'tokens.json')));
+    const data = JSON.parse(fs.readFileSync(path.join(__dirname, 'data', 'tokens.json')));
     if (Array.isArray(data)) {
       data.forEach(t => {
         if (t.feed) feeds[t.symbol.toUpperCase()] = t.feed;
@@ -382,8 +382,8 @@ async function validateLiquidity(tokenA, tokenB, symbol) {
     } else {
       liquidityUsd = Number(ethers.formatEther(reserve));
     }
-    if (liquidityUsd < 5) {
-      console.debug(`[LIQUIDITY] Skipped ${symbol}: liquidity < $5`);
+    if (liquidityUsd < 5000) {
+      console.debug(`[LIQUIDITY] Skipped ${symbol}: liquidity < $5k`);
       return false;
     }
     return true;
@@ -445,13 +445,22 @@ async function buy(token, opts = {}) {
 
   console.debug(`🕒 [${localTime()}] 🟢 Swapping WETH for ${token}...`);
   const before = await getTokenBalance(tokenAddr, walletAddress, token);
+  let minOut = 0n;
+  try {
+    const amounts = await withRetry(() =>
+      router.getAmountsOut(amountParsed, [getWethAddress(), tokenAddr])
+    );
+    minOut = amounts[1] * (10000n - SLIPPAGE_BPS) / 10000n;
+  } catch {
+    console.debug(`\u274c Unable to quote ${token}`);
+  }
   const params = {
     tokenIn: getWethAddress(),
     tokenOut: tokenAddr,
     fee: 3000,
     recipient: walletAddress,
     amountIn: amountParsed,
-    amountOutMinimum: 0,
+    amountOutMinimum: minOut,
     sqrtPriceLimitX96: 0,
     deadline: Math.floor(Date.now() / 1000) + 60 * 10
   };
