@@ -10,7 +10,7 @@ function latestRsi(closing) {
 // AI-Enhanced Momentum Breakout strategy
 // prices - array of closing prices (oldest to newest)
 function analyze(symbol, prices) {
-  if (!Array.isArray(prices) || prices.length < 5) {
+  if (!Array.isArray(prices) || prices.length < 5 || prices.some(p => p == null)) {
     if (DEBUG_TOKENS) {
       console.log(`❌ Insufficient price history for ${symbol}`);
     }
@@ -100,7 +100,7 @@ function shouldSell(symbol, prices) {
 }
 
 function score(prices) {
-  if (!Array.isArray(prices) || prices.length < 20) {
+  if (!Array.isArray(prices) || prices.length < 20 || prices.some(p => p == null)) {
     return { score: 0, signals: [] };
   }
 
