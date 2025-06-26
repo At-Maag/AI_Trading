@@ -1,8 +1,9 @@
 const { ethers, getAddress } = require('ethers');
 const fs = require('fs');
 const path = require('path');
-const config = require('./config');
-const logger = require('./logger');
+// Trading parameters
+const SLIPPAGE = 0.01; // 1%
+const GAS_LIMIT_GWEI = 80;
 
 // Minimal token address mapping used by trading functions. This will be
 // extended with entries from tokens.json if available.
@@ -158,7 +159,7 @@ const factory = new ethers.Contract(factoryAddress, factoryAbi, provider);
 function getWethAddress() {
   return TOKENS.WETH;
 }
-const SLIPPAGE_BPS = BigInt(Math.round((config.SLIPPAGE || 0.01) * 10000));
+const SLIPPAGE_BPS = BigInt(Math.round(SLIPPAGE * 10000));
 
 // Decimal definitions for tokens. Default to 18, fallback to 6 if unknown
 const TOKEN_DECIMALS = {
@@ -233,10 +234,10 @@ async function swapExactTokenForToken({ inputToken, outputToken, amountIn, slipp
 }
 
 function logError(err) {
-  logger.error(err);
+  console.error(err);
 }
 
-const logPath = path.join(__dirname, '..', 'data', 'trade-log.json');
+const logPath = path.join(__dirname, 'data', 'trade-log.json');
 
 function appendLog(entry) {
   try { fs.mkdirSync(path.dirname(logPath), { recursive: true }); } catch {}
@@ -250,13 +251,13 @@ function appendLog(entry) {
   if (entry.amountEth) line += ` ${entry.amountEth}`;
   if (entry.amountToken) line += ` ${entry.amountToken}`;
   if (entry.reason) line += ` (${entry.reason})`;
-  logger.log(line);
+  console.log(line);
 }
 
 async function gasOkay() {
   const feeData = await withRetry(() => provider.getFeeData());
   const gasPrice = feeData.gasPrice || ethers.parseUnits('0', 'gwei');
-  if (gasPrice > ethers.parseUnits(config.GAS_LIMIT_GWEI.toString(), 'gwei')) {
+  if (gasPrice > ethers.parseUnits(GAS_LIMIT_GWEI.toString(), 'gwei')) {
     const gwei = Number(ethers.formatUnits(gasPrice, 'gwei')).toFixed(1);
     logError(`Gas price ${gwei} gwei exceeds limit`);
     appendLog({ time: new Date().toISOString(), action: 'SKIP', reason: 'Gas high', gas: gwei });

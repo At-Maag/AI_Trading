@@ -1,5 +1,5 @@
 const { RSI, MACD, SMA } = require('technicalindicators');
-const config = require('./config');
+const DEBUG_TOKENS = process.env.DEBUG_TOKENS === 'true';
 
 // Calculate the most recent RSI value from an array of closing prices
 function latestRsi(closing) {
@@ -11,7 +11,7 @@ function latestRsi(closing) {
 // prices - array of closing prices (oldest to newest)
 function analyze(symbol, prices) {
   if (!Array.isArray(prices) || prices.length < 5) {
-    if (config.debugTokens) {
+    if (DEBUG_TOKENS) {
       console.log(`❌ Insufficient price history for ${symbol}`);
     }
     return null;
@@ -70,7 +70,7 @@ function analyze(symbol, prices) {
 
   const aggressive = process.env.AGGRESSIVE === 'true';
   console.log(`[STRATEGY] ${symbol} => signals:`, signals);
-  if (config.debugTokens) {
+  if (DEBUG_TOKENS) {
     if (signals.length) {
       console.log(`✅ SIGNAL MATCH: ${symbol}: [${signals.join(', ')}]`);
     } else {
