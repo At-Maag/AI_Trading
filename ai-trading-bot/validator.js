@@ -77,7 +77,7 @@ async function validateTokens(tokens, feeds, provider) {
     const entry = { symbol, address: t.address };
     if (feed) entry.feed = feed;
     valid.push(entry);
-    console.log(feed ? `\u2705 ${symbol} -> ${feed}` : `\u2705 ${symbol} -> no feed`);
+    console.log(feed ? `\u2705 ${symbol} -> ${feed}` : `\u26A0\uFE0F ${symbol} -> no feed`);
   }
 
   fs.writeFileSync(tokensFile, JSON.stringify(valid, null, 2));
