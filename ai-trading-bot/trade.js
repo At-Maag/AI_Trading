@@ -49,18 +49,26 @@ async function getEthPrice() {
   if (cachedEthPrice && now - lastEthFetch < 5 * 60 * 1000) {
     return cachedEthPrice;
   }
+  const feedAddress = '0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612';
+  const abi = [
+    'function latestAnswer() view returns (int256)',
+    'function latestRoundData() view returns (uint80 roundId,int256 answer,uint256 startedAt,uint256 updatedAt,uint80 answeredInRound)'
+  ];
+  const feed = new ethers.Contract(feedAddress, abi, provider);
   try {
-    const feedAddress = '0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612';
-    const abi = ['function latestAnswer() view returns (int256)'];
-    const feed = new ethers.Contract(feedAddress, abi, provider);
     const price = await feed.latestAnswer();
     cachedEthPrice = Number(price) / 1e8;
-    lastEthFetch = now;
-    return cachedEthPrice;
   } catch (err) {
-    console.warn(`\u274c ETH price fetch failed: ${err.message}`);
-    return cachedEthPrice;
+    try {
+      const [, answer] = await feed.latestRoundData();
+      cachedEthPrice = Number(answer) / 1e8;
+    } catch (err2) {
+      console.warn(`\u274c ETH price fetch failed: ${err2.message}`);
+      return cachedEthPrice;
+    }
   }
+  lastEthFetch = now;
+  return cachedEthPrice;
 }
 
 async function getTokenUsdPrice(symbol) {
@@ -85,8 +93,17 @@ async function getTokenUsdPrice(symbol) {
   const address = feeds[symbol.toUpperCase()];
   if (!address) return null;
 
-  const feed = new ethers.Contract(address, ['function latestAnswer() view returns (int256)'], provider);
-  const raw = await feed.latestAnswer();
+  const feed = new ethers.Contract(address, [
+    'function latestAnswer() view returns (int256)',
+    'function latestRoundData() view returns (uint80 roundId,int256 answer,uint256 startedAt,uint256 updatedAt,uint80 answeredInRound)'
+  ], provider);
+  let raw;
+  try {
+    raw = await feed.latestAnswer();
+  } catch (err) {
+    const [, answer] = await feed.latestRoundData();
+    raw = answer;
+  }
   return Number(raw) / 1e8;
 }
 
