@@ -4,6 +4,4 @@ This repository contains an experimental crypto trading bot implemented in Node.
 
 The project uses `ethers` to interact with the Arbitrum network and `technicalindicators` for trading signals. Copy `ai-trading-bot/.env.example` to `ai-trading-bot/.env` and fill in your wallet `PRIVATE_KEY`. You can also override the default RPC endpoint by setting `ARB_RPC_URL`. Set `PAPER=true` in the `.env` file to run in paper trading mode or `false` to place real trades. The `.env` file is excluded from version control so your credentials remain private.
 
-If the bot cannot download the latest token lists due to network restrictions, it
-falls back to a small built-in list containing WETH, USDC, USDT, DAI and WBTC so
-that basic testing can proceed offline.
+Token validation is completely local. Static lists under the `data/` folder provide token addresses and Chainlink price feeds. Run `node validator.js` to generate `tokens.json` before starting the bot.
