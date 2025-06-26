@@ -18,6 +18,10 @@ const tokensPath = path.join(__dirname, 'data', 'tokens.json');
 let tokensData = [];
 let coins = ['WETH'];
 let allTokens = [];
+let candidateTokens = [];
+let groupA = [];
+let groupB = [];
+let lastRebalance = 0;
 const SIGNAL_THRESHOLD = 2;
 try {
   tokensData = JSON.parse(fs.readFileSync(tokensPath));
@@ -38,20 +42,27 @@ async function refreshTopTokens() {
     const p = sym === 'WETH' ? ethPrice : await trade.getTokenUsdPrice(sym);
     if (p) prices[sym.toLowerCase()] = p;
   }
+  const seen = new Set();
   const evaluations = [];
   for (const sym of allTokens) {
+    if (seen.has(sym)) continue;
+    seen.add(sym);
     const price = prices[sym.toLowerCase()];
     if (!price) continue;
     if (!history[sym]) history[sym] = [];
     history[sym].push(price);
     if (history[sym].length > 100) history[sym].shift();
     const { score } = strategy.score(history[sym]);
-    evaluations.push({ symbol: sym, score });
+    if (score > 0) evaluations.push({ symbol: sym, score });
   }
   evaluations.sort((a, b) => b.score - a.score);
-  const top = evaluations.slice(0, 25).map(e => e.symbol);
-  coins = Array.from(new Set(['WETH', ...top]));
-  console.log(`[REFRESH] Tracking ${top.length} tokens`);
+  const top = evaluations.slice(0, 25);
+  candidateTokens = top.map(e => e.symbol);
+  groupA = top.slice(0, 5).map(e => e.symbol);
+  groupB = top.slice(5).map(e => e.symbol);
+  coins = Array.from(new Set(['WETH', ...candidateTokens]));
+  lastRebalance = Date.now();
+  console.log(`[REFRESH] GroupA: ${groupA.join(', ')} | GroupB size: ${groupB.length}`);
 }
 
 function localTime() {
@@ -166,8 +177,6 @@ function recordFailure(symbol, reason) {
 }
 
 let lastGroupBCheck = 0;
-let groupA = [];
-let groupB = [];
 
 const COLORS = {
   reset: '\x1b[0m',
@@ -294,7 +303,7 @@ async function getPrices() {
   return prices;
 }
 
-async function evaluate(prices, wethBal, ethPrice) {
+async function evaluate(prices) {
   const res = [];
   const allCoins = [...new Set([...coins, ...activePositions])];
   const totalScans = allCoins.length;
@@ -323,9 +332,32 @@ async function evaluate(prices, wethBal, ethPrice) {
     res.push({ symbol, price, score, signals, closing });
   }
   res.sort((a, b) => b.score - a.score);
-  groupA = res.slice(0, 5).map(r => r.symbol);
-  groupB = res.slice(5).map(r => r.symbol);
   return res;
+}
+
+function rebalanceGroups(evaluations, force = false) {
+  const now = Date.now();
+  if (!force && now - lastRebalance < 5 * 60 * 1000) return false;
+  lastRebalance = now;
+
+  const candSet = new Set(candidateTokens);
+  const filtered = evaluations
+    .filter(e => candSet.has(e.symbol) && e.score > 0)
+    .sort((a, b) => b.score - a.score);
+
+  candidateTokens = filtered.map(e => e.symbol).slice(0, 25);
+  const newA = candidateTokens.slice(0, 5);
+  const newB = candidateTokens.slice(5);
+
+  const changed = JSON.stringify(newA) !== JSON.stringify(groupA);
+  groupA = newA;
+  groupB = newB;
+  coins = Array.from(new Set(['WETH', ...candidateTokens, ...activePositions]));
+
+  if (changed) {
+    console.log(`[PROMOTE] GroupA -> ${groupA.join(', ')}`);
+  }
+  return changed;
 }
 
 async function checkTrades(entries, ethPrice, isTop) {
@@ -446,8 +478,9 @@ async function loop() {
     await trade.autoWrapOrUnwrap();
     lastWethBal = await trade.getWethBalance();
     if (!startWeth) startWeth = lastWethBal;
-    const evaluations = await evaluate(prices, lastWethBal, prices.eth);
+    const evaluations = await evaluate(prices);
     const ethPrice = prices.eth;
+    rebalanceGroups(evaluations);
     renderSummary(evaluations, lastWethBal, ethPrice);
     const holdings = await getHoldings(prices);
     renderHoldings(holdings);
