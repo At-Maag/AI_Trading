@@ -3,7 +3,6 @@ const FORCE_REFRESH = process.argv.includes('--force-refresh');
 const FORCE_VALIDATE = process.argv.includes('--force-validate');
 if (FORCE_REFRESH) console.log('🔁 Forced refresh enabled');
 if (FORCE_VALIDATE) console.log('🧹 Force token validation enabled');
-const { getPrices } = require('./datafeeds');
 const strategy = require('./strategy');
 const trade = require('./trade');
 const { TOKENS } = trade;
@@ -11,12 +10,13 @@ const risk = require('./risk');
 const fs = require('fs');
 const path = require('path');
 const { ethers, getAddress } = require('ethers');
-const config = require('./config');
 const validateTokens = require('./validator');
-const logger = require('./logger');
+const DEBUG_TOKENS = process.env.DEBUG_TOKENS === 'true';
 
 const tokensPath = path.join(__dirname, 'tokens.json');
 let tokensData = [];
+let coins = ['WETH'];
+const SIGNAL_THRESHOLD = 2;
 try {
   tokensData = JSON.parse(fs.readFileSync(tokensPath));
 } catch {}
@@ -90,10 +90,10 @@ let fullScanCount = 0;
 let startWeth = 0;
 let lastWethBal = 0;
 
-const logFile = path.join(__dirname, '..', 'data', 'trade-log.json');
+const logFile = path.join(__dirname, 'data', 'trade-log.json');
 
 function logError(err) {
-  logger.error(err);
+  console.error(err);
 }
 
 process.on('unhandledRejection', logError);
@@ -112,7 +112,7 @@ function logTrade(side, token, amount, price, reason, pnlPct) {
   let line = `${emoji} [${localTime()}] ${side} ${token} ${amount} @ $${price}`;
   if (reason) line += ` (${reason})`;
   if (typeof pnlPct === 'number') line += ` PnL ${pnlPct.toFixed(2)}%`;
-  logger.log(line);
+  console.log(line);
 }
 
 const failureTimestamps = {};
@@ -184,13 +184,13 @@ function renderSummary(list, wethBal = 0, ethPrice = 0) {
   const top = list.slice(0, 5);
   const ts = localTime();
   fullScanCount++;
-  const coins = [...new Set([...config.coins, ...activePositions])];
+  const allCoins = [...new Set([...coins, ...activePositions])];
   const pnlUsd = (wethBal - startWeth) * (ethPrice || 0);
   const pnlPct = startWeth ? (pnlUsd / (startWeth * (ethPrice || 0))) * 100 : 0;
   const pnlColored = color(`${formatUsd(pnlUsd)} (${pnlPct.toFixed(2)}%)`, pnlUsd >= 0 ? 'green' : 'red');
   const wethValue = wethBal * (ethPrice || 0);
   process.stdout.write('\x1Bc');
-  console.log(`[${ts}] [Scan ${fullScanCount}/14] ${color('=== ♦ TOP 5 COINS ===', 'magenta')}  [${coins.length - 1} Tokens] [WETH ${wethBal.toFixed(2)} (${formatUsd(wethValue)}) | PnL: ${pnlColored}]`);
+  console.log(`[${ts}] [Scan ${fullScanCount}/14] ${color('=== ♦ TOP 5 COINS ===', 'magenta')}  [${allCoins.length - 1} Tokens] [WETH ${wethBal.toFixed(2)} (${formatUsd(wethValue)}) | PnL: ${pnlColored}]`);
 
   const rows = top.map((r, idx) => {
     return [
@@ -253,11 +253,26 @@ function renderHoldings(list) {
   console.log(formatTable(rows, ['#', 'Symbol', 'Price', 'Qty', 'PnL']));
 }
 
+async function getPrices() {
+  const prices = {};
+  const ethPrice = await trade.getEthPrice();
+  prices.eth = ethPrice;
+  for (const symbol of coins) {
+    if (['ETH', 'WETH'].includes(symbol)) {
+      prices[symbol.toLowerCase()] = ethPrice;
+      continue;
+    }
+    const p = await trade.getTokenUsdPrice(symbol);
+    if (p) prices[symbol.toLowerCase()] = p;
+  }
+  return prices;
+}
+
 async function evaluate(prices, wethBal, ethPrice) {
   const res = [];
-  const coins = [...new Set([...config.coins, ...activePositions])];
-  const totalScans = coins.length;
-  for (const [index, symbol] of coins.entries()) {
+  const allCoins = [...new Set([...coins, ...activePositions])];
+  const totalScans = allCoins.length;
+  for (const [index, symbol] of allCoins.entries()) {
     const ts = localTime();
     // console.log(`[${ts}] [Scan ${index + 1}/${totalScans}] === ♦ TOP 5 COINS (Highest Scores) ===`);
     // console.log(`[${ts}] Scanning ${index + 1}/${totalScans}: ${symbol}`);
@@ -276,7 +291,7 @@ async function evaluate(prices, wethBal, ethPrice) {
     if (score === 0) {
       console.log(`Skipping ${symbol}: score = 0`);
     }
-    if (config.debugTokens) {
+    if (DEBUG_TOKENS) {
       console.log(`💡 TOKEN LOOP: ${symbol}, score: ${score}`);
     }
     res.push({ symbol, price, score, signals, closing });
@@ -294,16 +309,16 @@ async function checkTrades(entries, ethPrice, isTop) {
     }
 
     if (disabledTokens.has(symbol)) {
-      if (config.debugTokens) console.log(`⚠️ ${symbol} disabled`);
+      if (DEBUG_TOKENS) console.log(`⚠️ ${symbol} disabled`);
       continue;
     }
 
   if (closing.length < 5) {
-    if (config.debugTokens) console.log(`❌ Insufficient candles for ${symbol}`);
+    if (DEBUG_TOKENS) console.log(`❌ Insufficient candles for ${symbol}`);
     continue;
   }
 
-    if (score < (config.signalThreshold || 2) && !process.env.AGGRESSIVE) {
+    if (score < SIGNAL_THRESHOLD && !process.env.AGGRESSIVE) {
       console.log(`Skipping ${symbol}: score = ${score}`);
       continue;
     }
@@ -426,11 +441,11 @@ async function loop() {
 async function main() {
   console.log(`🚀 Bot started at ${localTime()}.`);
 
-  // Validate tokens if needed and update config.coins
+  // Validate tokens if needed and update coin list
   const validated = await validateTokens(FORCE_VALIDATE);
   if (Array.isArray(validated) && validated.length) {
     const syms = validated.map(t => t.symbol.toUpperCase());
-    config.coins = Array.from(new Set(['WETH', ...syms]));
+    coins = Array.from(new Set(['WETH', ...syms]));
   }
 
   await trade.autoWrapOrUnwrap();
