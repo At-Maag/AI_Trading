@@ -101,8 +101,13 @@ async function getTokenUsdPrice(symbol) {
   try {
     raw = await feed.latestAnswer();
   } catch (err) {
-    const [, answer] = await feed.latestRoundData();
-    raw = answer;
+    try {
+      const [, answer] = await feed.latestRoundData();
+      raw = answer;
+    } catch (err2) {
+      console.warn(`Price fetch failed for ${symbol}: ${err2.message}`);
+      return null;
+    }
   }
   return Number(raw) / 1e8;
 }
