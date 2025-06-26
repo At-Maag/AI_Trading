@@ -34,44 +34,50 @@ function loadFeeds() {
   return map;
 }
 
-async function validate() {
-  const provider = new ethers.JsonRpcProvider(process.env.ARB_RPC_URL);
+async function validateTokens(tokens, feeds, provider) {
+  if (!provider) provider = new ethers.JsonRpcProvider(process.env.ARB_RPC_URL);
   const abi = [
     'function latestRoundData() view returns (uint80 roundId,int256 answer,uint256 startedAt,uint256 updatedAt,uint80 answeredInRound)'
   ];
 
-  const tokens = loadTokens();
-  const feeds = loadFeeds();
+  if (!tokens) tokens = loadTokens();
+  if (!feeds) feeds = loadFeeds();
+
   const valid = [];
 
   for (const t of tokens) {
     if (!ethers.isAddress(t.address)) continue;
-    const feed = feeds[t.symbol];
+    const symbol = String(t.symbol).toUpperCase();
+    const feed = feeds[symbol];
 
-    if (!feed) {
-      console.log(`\u274c ${t.symbol} -> no feed`);
+    if (symbol === 'WETH' && !feed) {
+      console.log(`\u274c ${symbol} -> missing feed`);
       continue;
     }
 
-    const aggregator = new ethers.Contract(feed, abi, provider);
-    let answer;
-    try {
-      [, answer] = await aggregator.latestRoundData();
-    } catch (err) {
-      const reason = err.message || 'feed error';
-      if (DEBUG) console.error(err);
-      console.log(`\u274c ${t.symbol} -> ${feed} ${reason}`);
-      continue;
+    if (feed) {
+      const aggregator = new ethers.Contract(feed, abi, provider);
+      let answer;
+      try {
+        [, answer] = await aggregator.latestRoundData();
+      } catch (err) {
+        const reason = err.message || 'feed error';
+        if (DEBUG) console.error(err);
+        console.log(`\u274c ${symbol} -> ${feed} ${reason}`);
+        continue;
+      }
+
+      const num = Number(answer);
+      if (!num) {
+        console.log(`\u274c ${symbol} -> ${feed} price=0`);
+        continue;
+      }
     }
 
-    const num = Number(answer);
-    if (!num) {
-      console.log(`\u274c ${t.symbol} -> ${feed} price=0`);
-      continue;
-    }
-
-    valid.push({ symbol: t.symbol, address: t.address, feed });
-    console.log(`\u2705 ${t.symbol} -> ${feed}`);
+    const entry = { symbol, address: t.address };
+    if (feed) entry.feed = feed;
+    valid.push(entry);
+    console.log(feed ? `\u2705 ${symbol} -> ${feed}` : `\u2705 ${symbol} -> no feed`);
   }
 
   fs.writeFileSync(tokensFile, JSON.stringify(valid, null, 2));
@@ -79,7 +85,7 @@ async function validate() {
 }
 
 if (require.main === module) {
-  validate().catch(err => console.error(err));
+  validateTokens().catch(err => console.error(err));
 }
 
-module.exports = validate;
+module.exports = { validateTokens };
