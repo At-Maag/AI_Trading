@@ -6,7 +6,14 @@ require('dotenv').config();
 const tokenListPath = path.join(__dirname, 'data', 'arbitrum.tokenlist.json');
 const feedsPath = path.join(__dirname, 'data', 'feeds.json');
 const tokensFile = path.join(__dirname, 'tokens.json');
-const rawTokensFile = path.join(__dirname, 'rawTokens.json');
+
+// Remove legacy rawTokens.json if present
+const legacyFile = path.join(__dirname, 'rawTokens.json');
+if (fs.existsSync(legacyFile)) {
+  try { fs.unlinkSync(legacyFile); } catch {}
+}
+
+const DEBUG = process.argv.includes('--debug');
 
 function loadTokens() {
   const data = JSON.parse(fs.readFileSync(tokenListPath));
@@ -29,54 +36,45 @@ function loadFeeds() {
 
 async function validate() {
   const provider = new ethers.JsonRpcProvider(process.env.ARB_RPC_URL);
-  const abi = ['function latestAnswer() view returns (int256)'];
+  const abi = [
+    'function latestRoundData() view returns (uint80 roundId,int256 answer,uint256 startedAt,uint256 updatedAt,uint80 answeredInRound)'
+  ];
 
   const tokens = loadTokens();
   const feeds = loadFeeds();
   const valid = [];
-  const raw = [];
 
   for (const t of tokens) {
     if (!ethers.isAddress(t.address)) continue;
     const feed = feeds[t.symbol];
-    const entry = { symbol: t.symbol, address: t.address };
-    if (feed) entry.feed = feed;
 
     if (!feed) {
-      entry.reason = 'no feed';
-      console.log(`\u274c ${t.symbol} \u2192 no feed`);
-      raw.push(entry);
+      console.log(`\u274c ${t.symbol} -> no feed`);
       continue;
     }
 
     const aggregator = new ethers.Contract(feed, abi, provider);
-    let price;
+    let answer;
     try {
-      price = await aggregator.latestAnswer();
+      [, answer] = await aggregator.latestRoundData();
     } catch (err) {
-      entry.reason = err.message || 'feed error';
-      console.log(`\u274c ${t.symbol} \u2192 ${entry.reason}`);
-      raw.push(entry);
+      const reason = err.message || 'feed error';
+      if (DEBUG) console.error(err);
+      console.log(`\u274c ${t.symbol} -> ${feed} ${reason}`);
       continue;
     }
 
-    const num = Number(price);
+    const num = Number(answer);
     if (!num) {
-      entry.reason = 'price=0';
-      entry.price = price ? price.toString() : '0';
-      console.log(`\u274c ${t.symbol} \u2192 price=0`);
-      raw.push(entry);
+      console.log(`\u274c ${t.symbol} -> ${feed} price=0`);
       continue;
     }
 
-    entry.price = price.toString();
     valid.push({ symbol: t.symbol, address: t.address, feed });
-    raw.push(entry);
-    console.log(`\u2705 ${t.symbol}`);
+    console.log(`\u2705 ${t.symbol} -> ${feed}`);
   }
 
   fs.writeFileSync(tokensFile, JSON.stringify(valid, null, 2));
-  fs.writeFileSync(rawTokensFile, JSON.stringify(raw, null, 2));
   return valid;
 }
 
