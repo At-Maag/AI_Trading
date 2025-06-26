@@ -12,8 +12,18 @@ const fs = require('fs');
 const path = require('path');
 const { ethers, getAddress } = require('ethers');
 const config = require('./config');
-const validateTokens = require('./tokenValidator');
+const validateTokens = require('./validator');
 const logger = require('./logger');
+
+const tokensPath = path.join(__dirname, 'tokens.json');
+let tokensData = [];
+try {
+  tokensData = JSON.parse(fs.readFileSync(tokensPath));
+} catch {}
+if (!Array.isArray(tokensData) || tokensData.length === 0) {
+  console.error('tokens.json missing or empty. Run "node validator.js" first.');
+  process.exit(1);
+}
 
 const MIN_TRADE_USD = 10;
 console.debug = () => {};
