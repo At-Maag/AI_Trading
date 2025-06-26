@@ -1,7 +1,1 @@
-[
-  {"symbol":"WETH","address":"0x82af49447d8a07e3bd95bd0d56f35241523fbab1","feed":"0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612"},
-  {"symbol":"USDC","address":"0xaf88d065e77c8cc2239327c5edb3a432268e5831","feed":"0x6ce185860a4963106506C203335A2910413708e9"},
-  {"symbol":"USDT","address":"0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9","feed":"0x3f3f5dF88dC9F13eac63DF89EC16ef6e7E25DdE7"},
-  {"symbol":"DAI","address":"0xda10009cbd5d07dd0cecc66161fc93d7c9000da1","feed":"0x678df3415fc31947dA4324eC63212874be5a82f8"},
-  {"symbol":"ARB","address":"0x912CE59144191C1204e64559FE8253a0e49E6548","feed":"0xb2A824043730FE05F3DA2efafa1cbBE83fa548D6"}
-]
+[]
