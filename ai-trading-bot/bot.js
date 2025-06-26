@@ -10,7 +10,8 @@ const risk = require('./risk');
 const fs = require('fs');
 const path = require('path');
 const { ethers, getAddress } = require('ethers');
-const validateTokens = require('./validator');
+// Import the token validation function from validator.js
+const { validateTokens } = require('./validator');
 const DEBUG_TOKENS = process.env.DEBUG_TOKENS === 'true';
 
 const tokensPath = path.join(__dirname, 'tokens.json');
