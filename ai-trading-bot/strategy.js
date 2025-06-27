@@ -105,7 +105,8 @@ function score(prices) {
     return { score: 0, signals: [] };
   }
 
-  const rsiVals = RSI.calculate({ values: prices, period: 14 });
+  const rsiPeriod = Math.min(14, Math.max(5, prices.length - 1));
+  const rsiVals = RSI.calculate({ values: prices, period: rsiPeriod });
   const sma5 = SMA.calculate({ period: 5, values: prices });
   const sma20 = SMA.calculate({ period: 20, values: prices });
 

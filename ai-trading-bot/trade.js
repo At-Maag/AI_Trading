@@ -27,7 +27,7 @@ require('dotenv').config();
 const DRY_RUN = process.env.DRY_RUN === 'true';
 const DEBUG_PAIRS = process.env.DEBUG_PAIRS === 'true';
 const MIN_TRADE_USD = 10;
-const MIN_BUY_USD = 5;
+const MIN_BUY_USD = 10;
 const MIN_WETH_BAL = 0.005;
 const MIN_RECEIVE_TOKENS = 0.001;
 
@@ -110,6 +110,24 @@ async function getTokenUsdPrice(symbol) {
     }
   }
   return Number(raw) / 1e8;
+}
+
+// Fallback price using Uniswap quote (1 token -> WETH -> USD)
+async function getTokenDexPrice(symbol) {
+  const tokenAddr = TOKENS[symbol.toUpperCase()];
+  if (!tokenAddr) return null;
+  try {
+    const amounts = await withRetry(() =>
+      router.getAmountsOut(parseAmount(1, symbol), [tokenAddr, getWethAddress()])
+    );
+    if (!amounts || !amounts[1]) return null;
+    const wethOut = Number(ethers.formatEther(amounts[1]));
+    const ethPrice = await getEthPrice();
+    if (!ethPrice) return null;
+    return wethOut * ethPrice;
+  } catch {
+    return null;
+  }
 }
 
 // Minimal ABI for Uniswap V3 router
@@ -252,7 +270,7 @@ async function swapExactTokenForToken({ inputToken, outputToken, amountIn, slipp
     amountOutMinimum: 0,
     sqrtPriceLimitX96: 0
   };
-  return router.exactInputSingle(params);
+  return withRetry(() => router.exactInputSingle(params));
 }
 
 function logError(err) {
@@ -421,8 +439,14 @@ async function buy(token, opts = {}) {
     return { success: false, reason: 'balance' };
   }
 
-  const amountEth = wethBal * 0.15;
   const ethPrice = await getEthPrice();
+  let amountEth = wethBal * 0.15;
+  if (ethPrice && amountEth * ethPrice < 10) {
+    const minEth = 10 / ethPrice;
+    if (wethBal > minEth) {
+      amountEth = minEth;
+    }
+  }
   if (amountEth <= 0 || (ethPrice && amountEth * ethPrice < MIN_BUY_USD)) {
     console.debug(`🕒 [${localTime()}] ⚠️ Trade amount below $${MIN_BUY_USD}`);
     return { success: false, reason: 'amount' };
@@ -464,7 +488,7 @@ async function buy(token, opts = {}) {
     sqrtPriceLimitX96: 0,
     deadline: Math.floor(Date.now() / 1000) + 60 * 10
   };
-  const tx = await router.exactInputSingle(params);
+  const tx = await withRetry(() => router.exactInputSingle(params));
   const receipt = await tx.wait();
   console.debug(`🕒 [${localTime()}] ✅ TX confirmed: ${tx.hash}`);
 
@@ -676,6 +700,7 @@ module.exports = {
   validateTokenBeforeTrade,
   getEthPrice,
   getTokenUsdPrice,
+  getTokenDexPrice,
   TOKENS,
   logError
 };

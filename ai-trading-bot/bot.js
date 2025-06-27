@@ -30,10 +30,13 @@ if (!Array.isArray(tokensData) || tokensData.length === 0) {
   console.error('tokens.json missing or empty. Run "node validator.js" first.');
   process.exit(1);
 }
+tokensData = tokensData.slice(0, 60);
 allTokens = tokensData.map(t => t.symbol.toUpperCase());
 const feedMap = {};
 for (const t of tokensData) {
-  if (t.feed) feedMap[t.symbol.toUpperCase()] = t.feed;
+  if (t.symbol.toUpperCase() === 'WETH' && t.feed) {
+    feedMap['WETH'] = t.feed;
+  }
 }
 
 const MIN_TRADE_USD = 10;
@@ -43,10 +46,15 @@ async function refreshTopTokens() {
   const ethPrice = await trade.getEthPrice();
   const prices = { eth: ethPrice };
   for (const sym of allTokens) {
-    if (sym !== 'WETH' && !feedMap[sym]) continue;
     let p = null;
     try {
-      p = sym === 'WETH' ? ethPrice : await trade.getTokenUsdPrice(sym);
+      if (sym === 'WETH') {
+        p = ethPrice;
+      } else if (feedMap[sym]) {
+        p = await trade.getTokenUsdPrice(sym);
+      } else {
+        p = await trade.getTokenDexPrice(sym);
+      }
     } catch {}
     if (p) prices[sym.toLowerCase()] = p;
   }
@@ -69,6 +77,9 @@ async function refreshTopTokens() {
   candidateTokens = top.map(e => e.symbol);
 
   const nonZero = top.filter(t => t.score > 0).slice(0, 5);
+  if (nonZero.length < 5) {
+    console.warn(`[WARN] Only ${nonZero.length} tokens scored > 0`);
+  }
   if (nonZero.length >= 5) {
     groupA = nonZero.map(t => t.symbol);
   } else {
@@ -320,10 +331,13 @@ async function getPrices() {
       prices[symbol.toLowerCase()] = ethPrice;
       continue;
     }
-    if (!feedMap[symbol]) continue;
     let p = null;
     try {
-      p = await trade.getTokenUsdPrice(symbol);
+      if (feedMap[symbol]) {
+        p = await trade.getTokenUsdPrice(symbol);
+      } else {
+        p = await trade.getTokenDexPrice(symbol);
+      }
     } catch {}
     if (p) prices[symbol.toLowerCase()] = p;
   }
