@@ -10,7 +10,8 @@ function latestRsi(closing) {
 // AI-Enhanced Momentum Breakout strategy
 // prices - array of closing prices (oldest to newest)
 function analyze(symbol, prices) {
-  if (!Array.isArray(prices) || prices.length < 5 || prices.some(p => p == null)) {
+  // Require at least 10 candles for analysis to reduce noise
+  if (!Array.isArray(prices) || prices.length < 10 || prices.some(p => p == null)) {
     if (DEBUG_TOKENS) {
       console.log(`❌ Insufficient price history for ${symbol}`);
     }
@@ -119,15 +120,11 @@ function score(prices) {
     signals.push('Price above SMA5');
   }
 
-  if (sma5.length >= 2 && sma20.length >= 2) {
-    const prev = sma5[sma5.length - 2] <= sma20[sma20.length - 2];
-    const curr = sma5[sma5.length - 1] > sma20[sma20.length - 1];
-    if (prev && curr) {
-      signals.push('SMA5 crossover');
-    }
+  if (sma5.length && sma20.length && sma5[sma5.length - 1] > sma20[sma20.length - 1]) {
+    signals.push('SMA5 above SMA20');
   }
 
-  const score = Math.min(signals.length, 3);
+  const score = signals.length;
   return { score, signals };
 }
 

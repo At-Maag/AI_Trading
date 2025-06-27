@@ -31,6 +31,10 @@ if (!Array.isArray(tokensData) || tokensData.length === 0) {
   process.exit(1);
 }
 allTokens = tokensData.map(t => t.symbol.toUpperCase());
+const feedMap = {};
+for (const t of tokensData) {
+  if (t.feed) feedMap[t.symbol.toUpperCase()] = t.feed;
+}
 
 const MIN_TRADE_USD = 10;
 console.debug = () => {};
@@ -39,7 +43,11 @@ async function refreshTopTokens() {
   const ethPrice = await trade.getEthPrice();
   const prices = { eth: ethPrice };
   for (const sym of allTokens) {
-    const p = sym === 'WETH' ? ethPrice : await trade.getTokenUsdPrice(sym);
+    if (sym !== 'WETH' && !feedMap[sym]) continue;
+    let p = null;
+    try {
+      p = sym === 'WETH' ? ethPrice : await trade.getTokenUsdPrice(sym);
+    } catch {}
     if (p) prices[sym.toLowerCase()] = p;
   }
 
@@ -66,11 +74,18 @@ async function refreshTopTokens() {
   } else {
     groupA = top.slice(0, 5).map(t => t.symbol);
   }
-  groupB = candidateTokens.filter(s => !groupA.includes(s));
+  if (groupA.length < 5) {
+    const extras = allTokens.filter(s => !groupA.includes(s)).slice(0, 5 - groupA.length);
+    groupA = groupA.concat(extras);
+  }
+  // GroupB tracks the top 25 tokens regardless of GroupA membership
+  groupB = candidateTokens.slice();
 
   coins = Array.from(new Set(['WETH', ...candidateTokens]));
   lastRebalance = Date.now();
-  console.log(`[REFRESH] GroupA: ${groupA.join(', ')} | GroupB size: ${groupB.length}`);
+  const scoresMap = Object.fromEntries(top.map(t => [t.symbol, t.score]));
+  const displayA = groupA.map(s => `${s}(${scoresMap[s] ?? 0})`).join(', ');
+  console.log(`[REFRESH] GroupA: ${displayA} | GroupB size: ${groupB.length}`);
 }
 
 function localTime() {
@@ -305,7 +320,11 @@ async function getPrices() {
       prices[symbol.toLowerCase()] = ethPrice;
       continue;
     }
-    const p = await trade.getTokenUsdPrice(symbol);
+    if (!feedMap[symbol]) continue;
+    let p = null;
+    try {
+      p = await trade.getTokenUsdPrice(symbol);
+    } catch {}
     if (p) prices[symbol.toLowerCase()] = p;
   }
   return prices;
@@ -339,6 +358,10 @@ async function evaluate(prices) {
     }
     res.push({ symbol, price, score, signals, closing });
   }
+  const anyPositive = res.some(r => r.score > 0);
+  if (!anyPositive) {
+    res.forEach(r => { r.score = 1; });
+  }
   res.sort((a, b) => b.score - a.score);
   return res;
 }
@@ -356,10 +379,15 @@ function rebalanceGroups(evaluations, force = false) {
   candidateTokens = filtered.slice(0, 25).map(e => e.symbol);
 
   const nonZero = filtered.filter(e => e.score > 0).slice(0, 5);
-  const newA = nonZero.length >= 5
+  let newA = nonZero.length >= 5
     ? nonZero.map(e => e.symbol)
     : filtered.slice(0, 5).map(e => e.symbol);
-  const newB = candidateTokens.filter(s => !newA.includes(s));
+  if (newA.length < 5) {
+    const extras = candidateTokens.filter(s => !newA.includes(s)).slice(0, 5 - newA.length);
+    newA = newA.concat(extras);
+  }
+  // Keep GroupB as the top 25 list for background scanning
+  const newB = candidateTokens.slice();
 
   const changed = JSON.stringify(newA) !== JSON.stringify(groupA);
   groupA = newA;
@@ -367,7 +395,9 @@ function rebalanceGroups(evaluations, force = false) {
   coins = Array.from(new Set(['WETH', ...candidateTokens, ...activePositions]));
 
   if (changed) {
-    console.log(`[PROMOTE] GroupA -> ${groupA.join(', ')}`);
+    const scoreMap = Object.fromEntries(filtered.map(e => [e.symbol, e.score]));
+    const disp = groupA.map(s => `${s}(${scoreMap[s] ?? 0})`).join(', ');
+    console.log(`[PROMOTE] GroupA -> ${disp}`);
   }
   return changed;
 }
