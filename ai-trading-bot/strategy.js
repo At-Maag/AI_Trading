@@ -69,8 +69,8 @@ function analyze(symbol, prices) {
   }
 
   const aggressive = process.env.AGGRESSIVE === 'true';
-  console.log(`[STRATEGY] ${symbol} => signals:`, signals);
   if (DEBUG_TOKENS) {
+    console.log(`[STRATEGY] ${symbol} => signals:`, signals);
     if (signals.length) {
       console.log(`✅ SIGNAL MATCH: ${symbol}: [${signals.join(', ')}]`);
     } else {
@@ -100,7 +100,7 @@ function shouldSell(symbol, prices) {
 }
 
 function score(prices) {
-  if (!Array.isArray(prices) || prices.length < 20 || prices.some(p => p == null)) {
+  if (!Array.isArray(prices) || prices.length < 10 || prices.some(p => p == null)) {
     return { score: 0, signals: [] };
   }
 
@@ -108,30 +108,27 @@ function score(prices) {
   const sma5 = SMA.calculate({ period: 5, values: prices });
   const sma20 = SMA.calculate({ period: 20, values: prices });
 
-  const rsiCurrent = rsiVals[rsiVals.length - 1];
   const signals = [];
-
-  if (rsiCurrent >= 40 && rsiCurrent <= 60) {
-    signals.push('RSI in momentum zone');
+  const rsiCurrent = rsiVals[rsiVals.length - 1];
+  if (rsiCurrent >= 35 && rsiCurrent <= 65) {
+    signals.push('RSI neutral');
   }
 
   const currentPrice = prices[prices.length - 1];
   if (sma5.length && currentPrice > sma5[sma5.length - 1]) {
-    signals.push('Price above SMA');
+    signals.push('Price above SMA5');
   }
 
-  const rsiDropped = rsiVals.slice(-5).some(v => v < 30);
-  let crossover = false;
   if (sma5.length >= 2 && sma20.length >= 2) {
-    const prevCross = sma5[sma5.length - 2] <= sma20[sma20.length - 2];
-    const currCross = sma5[sma5.length - 1] > sma20[sma20.length - 1];
-    crossover = prevCross && currCross;
-  }
-  if (rsiDropped && rsiCurrent > 40 || crossover) {
-    signals.push('RSI bounce/SMA crossover');
+    const prev = sma5[sma5.length - 2] <= sma20[sma20.length - 2];
+    const curr = sma5[sma5.length - 1] > sma20[sma20.length - 1];
+    if (prev && curr) {
+      signals.push('SMA5 crossover');
+    }
   }
 
-  return { score: signals.length, signals };
+  const score = Math.min(signals.length, 3);
+  return { score, signals };
 }
 
 module.exports = { analyze, shouldBuy, shouldSell, latestRsi, score };
