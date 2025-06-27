@@ -42,6 +42,7 @@ async function refreshTopTokens() {
     const p = sym === 'WETH' ? ethPrice : await trade.getTokenUsdPrice(sym);
     if (p) prices[sym.toLowerCase()] = p;
   }
+
   const seen = new Set();
   const evaluations = [];
   for (const sym of allTokens) {
@@ -53,13 +54,20 @@ async function refreshTopTokens() {
     history[sym].push(price);
     if (history[sym].length > 100) history[sym].shift();
     const { score } = strategy.score(history[sym]);
-    if (score > 0) evaluations.push({ symbol: sym, score });
+    evaluations.push({ symbol: sym, score });
   }
   evaluations.sort((a, b) => b.score - a.score);
   const top = evaluations.slice(0, 25);
   candidateTokens = top.map(e => e.symbol);
-  groupA = top.slice(0, 5).map(e => e.symbol);
-  groupB = top.slice(5).map(e => e.symbol);
+
+  const nonZero = top.filter(t => t.score > 0).slice(0, 5);
+  if (nonZero.length >= 5) {
+    groupA = nonZero.map(t => t.symbol);
+  } else {
+    groupA = top.slice(0, 5).map(t => t.symbol);
+  }
+  groupB = candidateTokens.filter(s => !groupA.includes(s));
+
   coins = Array.from(new Set(['WETH', ...candidateTokens]));
   lastRebalance = Date.now();
   console.log(`[REFRESH] GroupA: ${groupA.join(', ')} | GroupB size: ${groupB.length}`);
@@ -313,7 +321,7 @@ async function evaluate(prices) {
     // console.log(`[${ts}] Scanning ${index + 1}/${totalScans}: ${symbol}`);
     const price = prices[symbol.toLowerCase()];
     if (!price) {
-      console.log(`⚠️ No price data for ${symbol}`);
+      if (DEBUG_TOKENS) console.log(`No price data for ${symbol}`);
       res.push({ symbol, price: 0, score: 0, signals: [], closing: [] });
       continue;
     }
@@ -323,11 +331,11 @@ async function evaluate(prices) {
     const closing = history[symbol];
     const { score, signals } = strategy.score(closing);
     lastScores[symbol] = score;
-    if (score === 0) {
-      console.log(`Skipping ${symbol}: score = 0`);
-    }
     if (DEBUG_TOKENS) {
       console.log(`💡 TOKEN LOOP: ${symbol}, score: ${score}`);
+      if (score === 0) {
+        console.log(`Skipping ${symbol}: score = 0`);
+      }
     }
     res.push({ symbol, price, score, signals, closing });
   }
@@ -342,12 +350,16 @@ function rebalanceGroups(evaluations, force = false) {
 
   const candSet = new Set(candidateTokens);
   const filtered = evaluations
-    .filter(e => candSet.has(e.symbol) && e.score > 0)
+    .filter(e => candSet.has(e.symbol))
     .sort((a, b) => b.score - a.score);
 
-  candidateTokens = filtered.map(e => e.symbol).slice(0, 25);
-  const newA = candidateTokens.slice(0, 5);
-  const newB = candidateTokens.slice(5);
+  candidateTokens = filtered.slice(0, 25).map(e => e.symbol);
+
+  const nonZero = filtered.filter(e => e.score > 0).slice(0, 5);
+  const newA = nonZero.length >= 5
+    ? nonZero.map(e => e.symbol)
+    : filtered.slice(0, 5).map(e => e.symbol);
+  const newB = candidateTokens.filter(s => !newA.includes(s));
 
   const changed = JSON.stringify(newA) !== JSON.stringify(groupA);
   groupA = newA;
@@ -371,13 +383,13 @@ async function checkTrades(entries, ethPrice, isTop) {
       continue;
     }
 
-  if (closing.length < 5) {
+  if (closing.length < 10) {
     if (DEBUG_TOKENS) console.log(`❌ Insufficient candles for ${symbol}`);
     continue;
   }
 
     if (score < SIGNAL_THRESHOLD && !process.env.AGGRESSIVE) {
-      console.log(`Skipping ${symbol}: score = ${score}`);
+      if (DEBUG_TOKENS) console.log(`Skipping ${symbol}: score = ${score}`);
       continue;
     }
 
