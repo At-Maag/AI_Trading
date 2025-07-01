@@ -1,6 +1,7 @@
 const { ethers, getAddress } = require('ethers');
 const fs = require('fs');
 const path = require('path');
+const { SELL_DESTINATION } = require('./tokenManager');
 const QUOTER_V2_ADDRESS = '0x61fFE014bA17989E743c5F6cB21bF9697530B21e';
 const UNISWAP_QUOTER_ABI = [
   "function quoteExactInputSingle(address tokenIn, address tokenOut, uint24 fee, uint256 amountIn, uint160 sqrtPriceLimitX96) external view returns (uint256 amountOut)"
@@ -16,16 +17,21 @@ const TOKENS = {
 };
 
 const tokenListPath = path.join(__dirname, '..', 'data', 'arbitrum.tokenlist.json');
-try {
-  const data = JSON.parse(fs.readFileSync(tokenListPath));
-  if (Array.isArray(data.tokens)) {
-    data.tokens.forEach(t => {
-      if (ethers.isAddress(t.address)) {
-        TOKENS[t.symbol.toUpperCase()] = t.address;
-      }
-    });
-  }
-} catch {}
+
+function refreshLocalTokenList() {
+  try {
+    const data = JSON.parse(fs.readFileSync(tokenListPath));
+    if (Array.isArray(data.tokens)) {
+      data.tokens.forEach(t => {
+        if (ethers.isAddress(t.address)) {
+          TOKENS[t.symbol.toUpperCase()] = t.address;
+        }
+      });
+    }
+  } catch {}
+}
+
+refreshLocalTokenList();
 require('dotenv').config();
 const DRY_RUN = process.env.DRY_RUN === 'true';
 const debug_pairs = process.env.DEBUG_PAIRS === 'true';
@@ -652,15 +658,12 @@ async function sellToken(token) {
     return { success: false, reason: 'too_small' };
   }
 
-  const ethBalance = parseFloat(ethers.formatEther(await provider.getBalance(wallet.address)));
-  const GAS_THRESHOLD = 0.005;
-  const receiveToken = ethBalance < GAS_THRESHOLD ? 'ETH' : 'WETH';
+  const receiveToken = SELL_DESTINATION;
 
   console.debug(`\u2022 Selling ${token} \u2192 ${receiveToken}`);
   console.debug(`\u2022 Token Balance: ${balance}`);
   console.debug(`\u2022 Token Price: $${tokenPrice}`);
   console.debug(`\u2022 Est. Value: $${tradeValueUsd.toFixed(2)}`);
-  console.debug(`\u2022 ETH for Gas: ${ethBalance} ETH`);
 
   try {
     const tx = await swapExactTokenForToken({
@@ -719,5 +722,6 @@ module.exports = {
   getEthPrice,
   getTokenUsdPrice,
   TOKENS,
-  logError
+  logError,
+  refreshLocalTokenList
 };
