@@ -99,12 +99,7 @@ const logFile = path.join(__dirname, 'data', 'trade-log.json');
 const pnlFile = path.join(__dirname, 'data', 'pnl-log.jsonl');
 const mlFile = path.join(__dirname, 'data', 'ml-dataset.jsonl');
 
-function logError(err) {
-  console.error(err);
-}
-
-process.on('unhandledRejection', logError);
-process.on('uncaughtException', logError);
+const { logError } = require('./logger');
 
 function restorePortfolio() {
   let trades = [];
