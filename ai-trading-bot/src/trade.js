@@ -75,26 +75,45 @@ async function getTokenUsdPrice(symbol) {
     WETH: '0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612'
   };
 
-  const address = feeds[symbol.toUpperCase()];
-  if (!address) return null;
-
-  const feed = new ethers.Contract(address, [
-    'function latestAnswer() view returns (int256)',
-    'function latestRoundData() view returns (uint80 roundId,int256 answer,uint256 startedAt,uint256 updatedAt,uint80 answeredInRound)'
-  ], provider);
-  let raw;
-  try {
-    raw = await feed.latestAnswer();
-  } catch (err) {
+  const feedAddress = feeds[symbol.toUpperCase()];
+  if (feedAddress) {
+    const feed = new ethers.Contract(feedAddress, [
+      'function latestAnswer() view returns (int256)',
+      'function latestRoundData() view returns (uint80 roundId,int256 answer,uint256 startedAt,uint256 updatedAt,uint80 answeredInRound)'
+    ], provider);
+    let raw;
     try {
-      const [, answer] = await feed.latestRoundData();
-      raw = answer;
-    } catch (err2) {
-      console.warn(`Price fetch failed for ${symbol}: ${err2.message}`);
-      return null;
+      raw = await feed.latestAnswer();
+    } catch (err) {
+      try {
+        const [, answer] = await feed.latestRoundData();
+        raw = answer;
+      } catch (err2) {
+        console.warn(`Price fetch failed for ${symbol}: ${err2.message}`);
+        return 0;
+      }
     }
+    return Number(raw) / 1e8;
   }
-  return Number(raw) / 1e8;
+
+  // If no Chainlink feed exists, estimate via Uniswap against WETH
+  console.warn(`[NO FEED] Estimating price for ${symbol} using Uniswap + WETH`);
+  const tokenAddr = TOKENS[symbol.toUpperCase()];
+  if (!tokenAddr) return 0;
+  try {
+    const amounts = await withRetry(() =>
+      router.getAmountsOut(parseAmount(1, 'WETH'), [getWethAddress(), tokenAddr])
+    );
+    if (!amounts || !amounts[1] || amounts[1] === 0n) return 0;
+    const tokensPerWeth = Number(ethers.formatUnits(amounts[1], getDecimals(symbol)));
+    if (!tokensPerWeth) return 0;
+    const ethPrice = await getEthPrice();
+    if (!ethPrice) return 0;
+    return ethPrice / tokensPerWeth;
+  } catch (err) {
+    console.warn(`Price estimation failed for ${symbol}: ${err.message}`);
+    return 0;
+  }
 }
 
 // Minimal ABI for Uniswap V3 router
