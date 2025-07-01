@@ -1,8 +1,0 @@
-{
-  "entries": [
-    { "pair": "WETH/USD", "feed": "0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612" },
-    { "pair": "USDC/USD", "feed": "0x6ce185860a4963106506C203335A2910413708e9" },
-    { "pair": "USDT/USD", "feed": "0x3f3f5dF88dC9F13eac63DF89EC16ef6e7E25DdE7" },
-    { "pair": "DAI/USD",  "feed": "0x678df3415fc31947dA4324eC63212874be5a82f8" }
-  ]
-}

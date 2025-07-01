@@ -1,8 +1,6 @@
 require('dotenv').config();
 const FORCE_REFRESH = process.argv.includes('--force-refresh');
-const FORCE_VALIDATE = process.argv.includes('--force-validate');
 if (FORCE_REFRESH) console.log('🔁 Forced refresh enabled');
-if (FORCE_VALIDATE) console.log('🧹 Force token validation enabled');
 const strategy = require('./strategy');
 const trade = require('./trade');
 const { TOKENS } = trade;
@@ -10,20 +8,23 @@ const risk = require('./risk');
 const fs = require('fs');
 const path = require('path');
 const { ethers, getAddress } = require('ethers');
-// Import the token validation function from validator.js
-const { validateTokens } = require('./validator');
 const DEBUG_TOKENS = process.env.DEBUG_TOKENS === 'true';
 
-const tokensPath = path.join(__dirname, 'tokens.json');
-let tokensData = [];
+const tokenListPath = path.join(__dirname, '..', 'data', 'arbitrum.tokenlist.json');
 let coins = ['WETH'];
 const SIGNAL_THRESHOLD = 2;
-try {
-  tokensData = JSON.parse(fs.readFileSync(tokensPath));
-} catch {}
-if (!Array.isArray(tokensData) || tokensData.length === 0) {
-  console.error('tokens.json missing or empty. Run "node validator.js" first.');
-  process.exit(1);
+
+function loadTokenList() {
+  try {
+    const data = JSON.parse(fs.readFileSync(tokenListPath));
+    if (!Array.isArray(data.tokens)) return [];
+    return data.tokens.filter(t => ethers.isAddress(t.address)).map(t => ({
+      symbol: String(t.symbol).toUpperCase(),
+      address: t.address
+    }));
+  } catch {
+    return [];
+  }
 }
 
 const MIN_TRADE_USD = 10;
@@ -252,6 +253,9 @@ function renderHoldings(list) {
     ];
   });
   console.log(formatTable(rows, ['#', 'Symbol', 'Price', 'Qty', 'PnL']));
+
+  const posLine = rows.map(r => `${r[1]}:${r[3]}`).join(' | ');
+  console.log(`Position Index -> ${posLine}`);
 }
 
 async function getPrices() {
@@ -298,9 +302,10 @@ async function evaluate(prices, wethBal, ethPrice) {
     res.push({ symbol, price, score, signals, closing });
   }
   res.sort((a, b) => b.score - a.score);
-  groupA = res.slice(0, 5).map(r => r.symbol);
-  groupB = res.slice(5).map(r => r.symbol);
-  return res;
+  const top = res.slice(0, 25);
+  groupA = top.slice(0, 5).map(r => r.symbol);
+  groupB = top.slice(5).map(r => r.symbol);
+  return top;
 }
 
 async function checkTrades(entries, ethPrice, isTop) {
@@ -442,17 +447,26 @@ async function loop() {
 async function main() {
   console.log(`🚀 Bot started at ${localTime()}.`);
 
-  // Validate tokens if needed and update coin list
-  const validated = await validateTokens(FORCE_VALIDATE);
-  if (Array.isArray(validated) && validated.length) {
-    const syms = validated.map(t => t.symbol.toUpperCase());
+  const list = loadTokenList();
+  if (list.length) {
+    const syms = list.map(t => t.symbol.toUpperCase());
     coins = Array.from(new Set(['WETH', ...syms]));
+  } else {
+    console.warn('⚠️ Token list empty. Trading WETH only');
   }
 
   await trade.autoWrapOrUnwrap();
   setInterval(() => {
     loop().catch(logError);
   }, 60 * 1000);
+
+  setInterval(() => {
+    const list = loadTokenList();
+    if (list.length) {
+      const syms = list.map(t => t.symbol.toUpperCase());
+      coins = Array.from(new Set(['WETH', ...syms]));
+    }
+  }, 60 * 60 * 1000);
 }
 
 main().catch(err => {

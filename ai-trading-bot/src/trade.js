@@ -5,21 +5,20 @@ const path = require('path');
 const SLIPPAGE = 0.01; // 1%
 const GAS_LIMIT_GWEI = 80;
 
-// Minimal token address mapping used by trading functions. This will be
-// extended with entries from tokens.json if available.
+// Minimal token address mapping used by trading functions. Additional tokens
+// are loaded from arbitrum.tokenlist.json at runtime.
 const TOKENS = {
-  WETH: '0x82af49447d8a07e3bd95bd0d56f35241523fbab1',
-  USDC: '0xaf88d065e77c8cc2239327c5edb3a432268e5831',
-  USDT: '0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9',
-  DAI:  '0xda10009cbd5d07dd0cecc66161fc93d7c9000da1'
+  WETH: '0x82af49447d8a07e3bd95bd0d56f35241523fbab1'
 };
 
-// Load dynamically validated tokens and extend address/price feed maps
+const tokenListPath = path.join(__dirname, '..', 'data', 'arbitrum.tokenlist.json');
 try {
-  const data = JSON.parse(fs.readFileSync(path.join(__dirname, 'tokens.json')));
-  if (Array.isArray(data)) {
-    data.forEach(t => {
-      if (t.address) TOKENS[t.symbol.toUpperCase()] = t.address;
+  const data = JSON.parse(fs.readFileSync(tokenListPath));
+  if (Array.isArray(data.tokens)) {
+    data.tokens.forEach(t => {
+      if (ethers.isAddress(t.address)) {
+        TOKENS[t.symbol.toUpperCase()] = t.address;
+      }
     });
   }
 } catch {}
@@ -73,22 +72,8 @@ async function getEthPrice() {
 
 async function getTokenUsdPrice(symbol) {
   const feeds = {
-    ETH:  '0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612',
-    USDC: '0x6ce185860a4963106506C203335A2910413708e9',
-    USDT: '0x3f3f5dF88dC9F13eac63DF89EC16ef6e7E25DdE7',
-    DAI:  '0x678df3415fc31947dA4324eC63212874be5a82f8',
-    ARB:  '0xb2A824043730FE05F3DA2efafa1cbBE83fa548D6'
+    WETH: '0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612'
   };
-
-  // Extend feed map with entries from tokens.json
-  try {
-    const data = JSON.parse(fs.readFileSync(path.join(__dirname, 'tokens.json')));
-    if (Array.isArray(data)) {
-      data.forEach(t => {
-        if (t.feed) feeds[t.symbol.toUpperCase()] = t.feed;
-      });
-    }
-  } catch {}
 
   const address = feeds[symbol.toUpperCase()];
   if (!address) return null;
@@ -331,8 +316,7 @@ async function validateTokenBeforeTrade(symbol, tokenAddress, wethAddress) {
   try {
     const pair = await factory.getPair(tokenAddress, wethAddress);
     if (pair === ethers.ZeroAddress) return false;
-    const price = await getTokenUsdPrice(symbol);
-    return price && price > 0;
+    return true;
   } catch {
     return false;
   }
