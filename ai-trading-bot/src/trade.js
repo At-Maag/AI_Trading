@@ -2,6 +2,7 @@ const { ethers, getAddress } = require('ethers');
 const fs = require('fs');
 const path = require('path');
 const { SELL_DESTINATION } = require('./tokenManager');
+const { logError } = require('./logger');
 const QUOTER_V2_ADDRESS = '0x61fFE014bA17989E743c5F6cB21bF9697530B21e';
 const UNISWAP_QUOTER_ABI = [
   "function quoteExactInputSingle(address tokenIn, address tokenOut, uint24 fee, uint256 amountIn, uint160 sqrtPriceLimitX96) external view returns (uint256 amountOut)"
@@ -311,10 +312,6 @@ async function swapExactTokenForToken({ inputToken, outputToken, amountIn, slipp
     sqrtPriceLimitX96: 0
   };
   return router.exactInputSingle(params);
-}
-
-function logError(err) {
-  console.error(err);
 }
 
 const logPath = path.join(__dirname, 'data', 'trade-log.json');
@@ -722,6 +719,5 @@ module.exports = {
   getEthPrice,
   getTokenUsdPrice,
   TOKENS,
-  logError,
   refreshLocalTokenList
 };
