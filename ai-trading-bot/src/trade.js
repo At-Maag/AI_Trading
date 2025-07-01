@@ -1,6 +1,10 @@
 const { ethers, getAddress } = require('ethers');
 const fs = require('fs');
 const path = require('path');
+const QUOTER_V2_ADDRESS = '0x61fFE014bA17989E743c5F6cB21bF9697530B21e';
+const UNISWAP_QUOTER_ABI = [
+  "function quoteExactInputSingle(address tokenIn, address tokenOut, uint24 fee, uint256 amountIn, uint160 sqrtPriceLimitX96) external view returns (uint256 amountOut)"
+];
 // Trading parameters
 const SLIPPAGE = 0.01; // 1%
 const GAS_LIMIT_GWEI = 80;
@@ -96,24 +100,35 @@ async function getTokenUsdPrice(symbol) {
     return Number(raw) / 1e8;
   }
 
-  // If no Chainlink feed exists, estimate via Uniswap against WETH
+  // If no Chainlink feed exists, estimate via Uniswap V3 quoter against WETH
   console.warn(`[NO FEED] Estimating price for ${symbol} using Uniswap + WETH`);
   const tokenAddr = TOKENS[symbol.toUpperCase()];
   if (!tokenAddr) return 0;
+
+  const wethAddr = getWethAddress();
+  const amountIn = parseAmount(1, wethAddr); // 1 WETH
+  const FEE_TIER = 3000; // 0.3% fee tier (most common)
+  const sqrtLimit = 0;
+
+  let amountOut;
   try {
-    const amounts = await withRetry(() =>
-      router.getAmountsOut(parseAmount(1, 'WETH'), [getWethAddress(), tokenAddr])
+    amountOut = await quoter.quoteExactInputSingle(
+      wethAddr,
+      tokenAddr,
+      FEE_TIER,
+      amountIn,
+      sqrtLimit
     );
-    if (!amounts || !amounts[1] || amounts[1] === 0n) return 0;
-    const tokensPerWeth = Number(ethers.formatUnits(amounts[1], getDecimals(symbol)));
-    if (!tokensPerWeth) return 0;
-    const ethPrice = await getEthPrice();
-    if (!ethPrice) return 0;
-    return ethPrice / tokensPerWeth;
-  } catch (err) {
-    console.warn(`Price estimation failed for ${symbol}: ${err.message}`);
+  } catch (e) {
+    console.warn(`[QUOTE FAIL] ${symbol}:`, e.message);
     return 0;
   }
+
+  const wethPrice = await getEthPrice(); // Chainlink WETH/USD
+  if (!wethPrice || amountOut === 0n) return 0;
+
+  const priceInWeth = 1 / parseFloat(ethers.formatUnits(amountOut, 18));
+  return priceInWeth * wethPrice;
 }
 
 // Minimal ABI for Uniswap V3 router
@@ -147,6 +162,7 @@ const provider = new ethers.JsonRpcProvider(process.env.ARB_RPC_URL);
 const rawKey = process.env.PRIVATE_KEY ? process.env.PRIVATE_KEY.trim() : '';
 const wallet = new ethers.Wallet(rawKey.startsWith('0x') ? rawKey : '0x' + rawKey, provider);
 const walletAddress = getAddress(wallet.address);
+const quoter = new ethers.Contract(QUOTER_V2_ADDRESS, UNISWAP_QUOTER_ABI, provider);
 
 async function withRetry(fn, retries = 3, delay = 1000) {
   for (let i = 0; i < retries; i++) {
