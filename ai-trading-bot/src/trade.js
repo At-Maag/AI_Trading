@@ -28,7 +28,7 @@ try {
 } catch {}
 require('dotenv').config();
 const DRY_RUN = process.env.DRY_RUN === 'true';
-const DEBUG_PAIRS = process.env.DEBUG_PAIRS === 'true';
+const debug_pairs = process.env.DEBUG_PAIRS === 'true';
 const MIN_TRADE_USD = 10;
 const MIN_BUY_USD = 5;
 const MIN_WETH_BAL = 0.005;
@@ -100,11 +100,11 @@ async function getTokenUsdPrice(symbol) {
 
   const tokenAddr = TOKENS[tokenSym];
   if (!tokenAddr) {
-    console.warn(`[MISSING TOKEN] ${symbol}`);
+    if (debug_pairs) console.warn(`[MISSING TOKEN] ${symbol}`);
     return 0;
   }
 
-  console.warn(`[NO FEED] Estimating price for ${symbol} using Uniswap + WETH`);
+  if (debug_pairs) console.warn(`[NO FEED] Estimating price for ${symbol} using Uniswap + WETH`);
 
   const wethAddr = getWethAddress();
   const amountIn = parseAmount(1, tokenSym); // sell 1 token
@@ -125,11 +125,11 @@ async function getTokenUsdPrice(symbol) {
         break;
       }
     } catch (e) {
-      console.warn(`[QUOTE FAIL] ${symbol} ${fee}: ${e.message}`);
+      if (debug_pairs) console.warn(`[QUOTE FAIL] ${symbol} ${fee}: ${e.message}`);
     }
   }
   if (wethOut === 0n) {
-    console.warn(`[SUSHI FALLBACK] ${symbol}`);
+    if (debug_pairs) console.warn(`[SUSHI FALLBACK] ${symbol}`);
     try {
       const amounts = await sushiRouter.getAmountsOut(amountIn, [tokenAddr, wethAddr]);
       const out = amounts[1];
@@ -137,10 +137,10 @@ async function getTokenUsdPrice(symbol) {
       const wethPrice = await getEthPrice();
       if (!wethPrice) return 0;
       const usd = priceInWeth * wethPrice;
-      console.log(`[SUSHI SUCCESS] ${symbol} estimated at $${usd}`);
+      if (debug_pairs) console.log(`[SUSHI SUCCESS] ${symbol} estimated at $${usd}`);
       return usd;
     } catch (e) {
-      console.warn(`[SUSHI FAIL] ${symbol}: ${e.code || e.message}`);
+      if (debug_pairs) console.warn(`[SUSHI FAIL] ${symbol}: ${e.code || e.message}`);
       return 0;
     }
   }
@@ -150,7 +150,7 @@ async function getTokenUsdPrice(symbol) {
 
   const wethAmt = parseFloat(ethers.formatUnits(wethOut, 18));
   const usd = wethAmt * wethPrice;
-  console.log(`[SUCCESS] ${symbol} estimated at $${usd}`);
+  if (debug_pairs) console.log(`[SUCCESS] ${symbol} estimated at $${usd}`);
   return usd;
 }
 
@@ -341,20 +341,20 @@ async function gasOkay() {
 }
 
 async function getPairAddress(tokenA, tokenB) {
-  if (DEBUG_PAIRS) {
+  if (debug_pairs) {
     console.debug(`[PAIR] Searching pair for ${tokenA} ${tokenB}`);
   }
   for (const fee of FEE_TIERS) {
     try {
       const pool = await withRetry(() => v3Factory.getPool(tokenA, tokenB, fee));
       if (pool && pool !== ethers.ZeroAddress) {
-        if (DEBUG_PAIRS) {
+        if (debug_pairs) {
           console.debug(`[PAIR] V3 pool ${fee} found for ${tokenA} ${tokenB}`);
         }
         return { address: pool, version: 'v3' };
       }
     } catch (err) {
-      if (DEBUG_PAIRS) {
+      if (debug_pairs) {
         console.debug(`[PAIR] V3 search failed (${fee}): ${err.message}`);
       }
     }
@@ -362,16 +362,16 @@ async function getPairAddress(tokenA, tokenB) {
   try {
     const pair = await withRetry(() => factory.getPair(tokenA, tokenB));
     if (pair && pair !== ethers.ZeroAddress) {
-      if (DEBUG_PAIRS) {
+      if (debug_pairs) {
         console.debug(`[PAIR] V2 pair found for ${tokenA} ${tokenB}`);
       }
       return { address: pair, version: 'v2' };
     }
-    if (DEBUG_PAIRS) {
+    if (debug_pairs) {
       console.debug(`[PAIR] No pair found for ${tokenA} ${tokenB}`);
     }
   } catch (err) {
-    if (DEBUG_PAIRS) {
+    if (debug_pairs) {
       console.debug(`[PAIR] V2 search failed: ${err.message}`);
     }
   }
@@ -393,7 +393,7 @@ async function validateLiquidity(tokenA, tokenB, symbol) {
   try {
     let { address: pairAddr, version } = await getPairAddress(tokenA, tokenB);
     if (pairAddr === ethers.ZeroAddress && TOKENS.USDC) {
-      if (DEBUG_PAIRS) {
+      if (debug_pairs) {
         console.debug(`[PAIR] Retrying with USDC pair for ${symbol}`);
       }
       tokenA = TOKENS.USDC;
@@ -462,7 +462,7 @@ async function buy(token, opts = {}) {
     console.debug('Token address is null, skipping trade.');
     return { success: false, reason: 'no-address' };
   }
-  if (DEBUG_PAIRS) {
+  if (debug_pairs) {
     console.debug(`[ADDR] ${token} -> ${tokenAddr}`);
   }
 

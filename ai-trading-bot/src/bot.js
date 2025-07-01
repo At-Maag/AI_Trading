@@ -9,6 +9,7 @@ const fs = require('fs');
 const path = require('path');
 const { ethers, getAddress } = require('ethers');
 const DEBUG_TOKENS = process.env.DEBUG_TOKENS === 'true';
+const debug_pairs = process.env.DEBUG_PAIRS === 'true';
 
 const tokenListPath = path.join(__dirname, '..', 'data', 'arbitrum.tokenlist.json');
 let coins = ['WETH'];
@@ -269,16 +270,28 @@ function renderHoldings(list) {
 
 async function getPrices() {
   const prices = {};
+  let successCount = 0;
   const ethPrice = await trade.getEthPrice();
   prices.eth = ethPrice;
   for (const symbol of coins) {
     if (['ETH', 'WETH'].includes(symbol)) {
       prices[symbol.toLowerCase()] = ethPrice;
+      if (ethPrice) successCount++;
+      if (debug_pairs && ethPrice) {
+        console.log(`[✓] ${symbol} = $${ethPrice.toFixed(2)}`);
+      }
       continue;
     }
     const p = await trade.getTokenUsdPrice(symbol);
-    if (p) prices[symbol.toLowerCase()] = p;
+    if (p) {
+      prices[symbol.toLowerCase()] = p;
+      if (p > 0) {
+        successCount++;
+        if (debug_pairs) console.log(`[✓] ${symbol} = $${p.toFixed(2)}`);
+      }
+    }
   }
+  console.log(`✅ ${successCount}/${coins.length} tokens priced`);
   return prices;
 }
 
@@ -303,7 +316,9 @@ async function evaluate(prices, wethBal, ethPrice) {
     const { score, signals } = strategy.score(closing);
     lastScores[symbol] = score;
     if (score === 0) {
-      console.log(`Skipping ${symbol}: score = 0`);
+      if (debug_pairs) {
+        console.log(`Skipping ${symbol}: score = 0`);
+      }
     }
     if (DEBUG_TOKENS) {
       console.log(`💡 TOKEN LOOP: ${symbol}, score: ${score}`);
