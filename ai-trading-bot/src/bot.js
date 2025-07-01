@@ -96,6 +96,7 @@ let lastWethBal = 0;
 
 const logFile = path.join(__dirname, 'data', 'trade-log.json');
 const pnlFile = path.join(__dirname, 'data', 'pnl-log.jsonl');
+const mlFile = path.join(__dirname, 'data', 'ml-dataset.jsonl');
 
 function logError(err) {
   console.error(err);
@@ -395,18 +396,51 @@ async function checkTrades(entries, ethPrice, isTop) {
       continue;
     }
 
-  if (closing.length < 5) {
-    if (DEBUG_TOKENS) console.log(`❌ Insufficient candles for ${symbol}`);
-    continue;
-  }
+    if (closing.length < 5) {
+      if (DEBUG_TOKENS) console.log(`❌ Insufficient candles for ${symbol}`);
+      continue;
+    }
 
     if (score < SIGNAL_THRESHOLD && !process.env.AGGRESSIVE) {
       if (debug_pairs) console.log(`Skipping ${symbol}: score = ${score}`);
       continue;
     }
 
+    const signalInfo = strategy.getTradeSignals(closing);
+    let decision = 'NONE';
+    let hitStop = false;
+    let hitProfit = false;
+    let sellSignal = false;
+
     if (!activeTrades[symbol]) {
       if (strategy.shouldBuy(symbol, closing)) {
+        decision = 'BUY';
+      }
+    } else {
+      hitStop = risk.stopLoss(symbol, price);
+      hitProfit = risk.takeProfit(symbol, price);
+      sellSignal = strategy.shouldSell(symbol, closing);
+      if (hitStop || hitProfit || sellSignal) {
+        decision = 'SELL';
+      }
+    }
+
+    if (!['WETH', 'USDC'].includes(symbol)) {
+      const entry = {
+        symbol,
+        price,
+        rsi: signalInfo.rsi,
+        macdHist: signalInfo.macdHist,
+        smaAbove: signalInfo.smaAbove,
+        momentum: signalInfo.momentum,
+        signalScore: signalInfo.signalScore,
+        decision,
+        timestamp: new Date().toLocaleString('en-US', { timeZone: 'America/Los_Angeles' })
+      };
+      try { fs.appendFileSync(mlFile, JSON.stringify(entry) + '\n'); } catch {}
+    }
+
+    if (!activeTrades[symbol] && decision === 'BUY') {
         const balance = await trade.getWethBalance();
         if (balance * (ethPrice || 0) < 10) {
           console.log('⚠️ Skipping trade – not enough balance');
@@ -456,58 +490,52 @@ async function checkTrades(entries, ethPrice, isTop) {
             const newAvg = ((prev.avgPrice * prev.qty) + res.qty * price) / newQty;
             positionIndex[symbol] = { qty: newQty, avgPrice: newAvg };
           }
-          logTrade('BUY', symbol, res.qty || amountEth, price, 'signal');
-        }
+        logTrade('BUY', symbol, res.qty || amountEth, price, 'signal');
       }
-    } else {
-      const hitStop = risk.stopLoss(symbol, price);
-      const hitProfit = risk.takeProfit(symbol, price);
-      const sellSignal = strategy.shouldSell(symbol, closing);
-      if (hitStop || hitProfit || sellSignal) {
-        const reason = sellSignal ? 'signal' : hitStop ? 'stopLoss' : 'takeProfit';
-        const entry = risk.getEntry(symbol) || price;
-        const pnl = ((price - entry) / entry) * 100;
-        let res;
-        if (!paper) {
-          try {
-        let tokenAddr = TOKENS[symbol.toUpperCase()];
-        if (!tokenAddr) {
-          console.log("Token address is null, skipping trade.");
-        } else {
-          await trade.autoWrapOrUnwrap();
-          res = await trade.sellToken(symbol);
-          if (!res.success) recordFailure(symbol, res.reason);
-        }
-          } catch (err) {
-            logError(`Failed to trade ${symbol} \u2192 ETH | ${err.message}`);
-            recordFailure(symbol, err.message);
+    } else if (activeTrades[symbol] && decision === 'SELL') {
+      const reason = sellSignal ? 'signal' : hitStop ? 'stopLoss' : 'takeProfit';
+      const entry = risk.getEntry(symbol) || price;
+      const pnl = ((price - entry) / entry) * 100;
+      let res;
+      if (!paper) {
+        try {
+          let tokenAddr = TOKENS[symbol.toUpperCase()];
+          if (!tokenAddr) {
+            console.log("Token address is null, skipping trade.");
+          } else {
+            await trade.autoWrapOrUnwrap();
+            res = await trade.sellToken(symbol);
+            if (!res.success) recordFailure(symbol, res.reason);
           }
-        } else {
+        } catch (err) {
+          logError(`Failed to trade ${symbol} \u2192 ETH | ${err.message}`);
+          recordFailure(symbol, err.message);
+        }
+      } else {
         let tokenAddr = TOKENS[symbol.toUpperCase()];
         if (tokenAddr) {
           await trade.autoWrapOrUnwrap();
           res = await trade.sellToken(symbol);
         }
-        }
-        if (res && res.simulated) {
-          console.log(`[DRY RUN] Sell simulated for ${symbol}`);
-        }
-        if (res && res.success) {
-          if (res.qty) {
-            const prev = positionIndex[symbol];
-            if (prev) {
-              const remaining = prev.qty - res.qty;
-              if (remaining <= 0) {
-                delete positionIndex[symbol];
-              } else {
-                positionIndex[symbol].qty = remaining;
-              }
+      }
+      if (res && res.simulated) {
+        console.log(`[DRY RUN] Sell simulated for ${symbol}`);
+      }
+      if (res && res.success) {
+        if (res.qty) {
+          const prev = positionIndex[symbol];
+          if (prev) {
+            const remaining = prev.qty - res.qty;
+            if (remaining <= 0) {
+              delete positionIndex[symbol];
+            } else {
+              positionIndex[symbol].qty = remaining;
             }
           }
-          logTrade('SELL', symbol, res.qty || 0, price, reason, pnl);
-          activeTrades[symbol] = false;
-          activePositions.delete(symbol);
         }
+        logTrade('SELL', symbol, res.qty || 0, price, reason, pnl);
+        activeTrades[symbol] = false;
+        activePositions.delete(symbol);
       }
     }
   }
