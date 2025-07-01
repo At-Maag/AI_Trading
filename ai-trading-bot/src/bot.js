@@ -242,17 +242,26 @@ function renderHoldings(list) {
   }
 
   const rows = list.map((h, idx) => {
-    const pnlStr = h.pnlPct === null ? '-' : `${h.pnlPct >= 0 ? '+' : ''}${h.pnlPct.toFixed(1)}% (${formatUsd(h.pnlUsd)})`;
-    const colored = h.pnlPct === null ? pnlStr : color(pnlStr, h.pnlPct >= 0 ? 'green' : 'red');
+    const pnlStr =
+      h.pnlPct === null ?
+        '-' :
+        `${h.pnlPct >= 0 ? '+' : ''}${h.pnlPct.toFixed(1)}% (${formatUsd(h.pnlUsd)})`;
+    const colored =
+      h.pnlPct === null ?
+        pnlStr :
+        color(pnlStr, h.pnlPct >= 0 ? 'green' : 'red');
+
+    const valueUsd = h.price && h.qty ? h.price * h.qty : null;
+
     return [
       String(idx + 1),
       h.symbol,
-      `$${h.price.toFixed(2)}`,
+      valueUsd !== null ? formatUsd(valueUsd) : '-',
       h.qty.toFixed(2),
       colored
     ];
   });
-  console.log(formatTable(rows, ['#', 'Symbol', 'Price', 'Qty', 'PnL']));
+  console.log(formatTable(rows, ['#', 'Symbol', 'Value (USD)', 'Qty', 'PnL']));
 
   const posLine = rows.map(r => `${r[1]}:${r[3]}`).join(' | ');
   console.log(`Position Index -> ${posLine}`);
