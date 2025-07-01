@@ -317,13 +317,14 @@ function appendLog(entry) {
   try { fs.mkdirSync(path.dirname(logPath), { recursive: true }); } catch {}
   let data = [];
   try { data = JSON.parse(fs.readFileSync(logPath)); } catch {}
+  const ts = new Date().toLocaleString('en-US', { timeZone: 'America/Los_Angeles' });
+  entry.timestamp = ts;
   data.push(entry);
   fs.writeFileSync(logPath, JSON.stringify(data, null, 2));
 
   let line = `[${localTime()}] ${entry.action}`;
   if (entry.token) line += ` ${entry.token}`;
-  if (entry.amountEth) line += ` ${entry.amountEth}`;
-  if (entry.amountToken) line += ` ${entry.amountToken}`;
+  if (entry.qty) line += ` ${Number(entry.qty).toFixed(4)}`;
   if (entry.reason) line += ` (${entry.reason})`;
   console.log(line);
 }
@@ -520,8 +521,7 @@ async function buy(token, opts = {}) {
   console.debug(`🕒 [${localTime()}] ✅ Bought ${received.toFixed(2)} ${token}`);
   const buyTime = new Date().toLocaleTimeString('en-US', { hour12: true, timeZone: 'America/Los_Angeles' });
   console.debug(`[BUY] ${token} for ${amountEth.toFixed(4)} ETH @ ${buyTime}`);
-  appendLog({ time: new Date().toISOString(), action: 'BUY', token, amountEth: amountEth.toFixed(6), tx: tx.hash });
-  return { success: true, tx: tx.hash };
+  return { success: true, tx: tx.hash, qty: received };
 }
 
 async function sell(amountToken, path, token, opts = {}) {
@@ -671,7 +671,7 @@ async function sellToken(token) {
     });
     if (tx) {
       console.debug(`\u2713 Swap TX sent: ${tx.hash}`);
-      return { success: true, tx };
+      return { success: true, tx, qty: balance };
     }
   } catch (err) {
     console.debug(`\u2718 Swap failed`);

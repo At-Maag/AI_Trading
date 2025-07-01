@@ -55,6 +55,7 @@ const walletAddress = getAddress(wallet.address);
 
 const activePositions = new Set();
 const lastScores = {};
+const positionIndex = {};
 
 
 async function withRetry(fn, retries = 3, delay = 1000) {
@@ -94,6 +95,7 @@ let startWeth = 0;
 let lastWethBal = 0;
 
 const logFile = path.join(__dirname, 'data', 'trade-log.json');
+const pnlFile = path.join(__dirname, 'data', 'pnl-log.jsonl');
 
 function logError(err) {
   console.error(err);
@@ -102,17 +104,50 @@ function logError(err) {
 process.on('unhandledRejection', logError);
 process.on('uncaughtException', logError);
 
-function logTrade(side, token, amount, price, reason, pnlPct) {
+function restorePortfolio() {
+  let trades = [];
+  try { trades = JSON.parse(fs.readFileSync(logFile)); } catch { return; }
+  const temp = {};
+  for (const t of trades) {
+    const sym = (t.token || '').toUpperCase();
+    if (!sym || ['WETH', 'USDC'].includes(sym)) continue;
+    const qty = Number(t.qty || t.amount || 0);
+    const price = Number(t.price || 0);
+    if (!temp[sym]) temp[sym] = { qty: 0, cost: 0 };
+    if (t.action === 'BUY' || t.side === 'BUY') {
+      temp[sym].qty += qty;
+      temp[sym].cost += qty * price;
+    } else if (t.action === 'SELL' || t.side === 'SELL') {
+      const avg = temp[sym].qty ? temp[sym].cost / temp[sym].qty : price;
+      temp[sym].qty -= qty;
+      temp[sym].cost -= avg * qty;
+    }
+  }
+  for (const sym of Object.keys(temp)) {
+    if (temp[sym].qty > 0) {
+      const avg = temp[sym].cost / temp[sym].qty;
+      positionIndex[sym] = { qty: temp[sym].qty, avgPrice: avg };
+      activePositions.add(sym);
+      activeTrades[sym] = true;
+      risk.updateEntry(sym, avg);
+    }
+  }
+}
+
+function logTrade(action, token, qty, price, reason, pnlPct) {
   let trades = [];
   try { trades = JSON.parse(fs.readFileSync(logFile)); } catch {}
-  const entry = { time: new Date().toISOString(), side, token, amount, price };
+  const timestamp = new Date().toLocaleString('en-US', {
+    timeZone: 'America/Los_Angeles'
+  });
+  const entry = { timestamp, token, qty: Number(qty), price, action };
   if (reason) entry.reason = reason;
   if (typeof pnlPct === 'number') entry.pnlPct = Number(pnlPct.toFixed(2));
   trades.push(entry);
   fs.writeFileSync(logFile, JSON.stringify(trades, null, 2));
 
   const emoji = '💰';
-  let line = `${emoji} [${localTime()}] ${side} ${token} ${amount} @ $${price}`;
+  let line = `${emoji} [${localTime()}] ${action} ${token} ${qty} @ $${price}`;
   if (reason) line += ` (${reason})`;
   if (typeof pnlPct === 'number') line += ` PnL ${pnlPct.toFixed(2)}%`;
   console.log(line);
@@ -209,8 +244,10 @@ function renderSummary(list, wethBal = 0, ethPrice = 0) {
 }
 
 async function getHoldings(prices) {
-  const symbols = new Set(['WETH', 'USDC', 'USDT', 'DAI']);
-  for (const s of activePositions) symbols.add(s);
+  const symbols = new Set();
+  for (const s of activePositions) {
+    if (!['WETH', 'USDC'].includes(s)) symbols.add(s);
+  }
   const holdings = [];
   for (const sym of symbols) {
     const addr = TOKENS[sym.toUpperCase()];
@@ -268,6 +305,21 @@ function renderHoldings(list) {
   console.log(`Position Index -> ${posLine}`);
 }
 
+function recordPnl(prices, holdings, wethBal) {
+  const totalValue = holdings.reduce((s, h) => s + (h.price * h.qty || 0), 0) +
+    wethBal * (prices.eth || 0);
+  const unreal = holdings.reduce((s, h) => s + (h.pnlUsd || 0), 0);
+  const entry = {
+    timestamp: new Date().toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }),
+    totalValue: Number(totalValue.toFixed(2)),
+    unrealizedPnL: Number(unreal.toFixed(2)),
+    numPositions: holdings.length
+  };
+  try {
+    fs.appendFileSync(pnlFile, JSON.stringify(entry) + '\n');
+  } catch {}
+}
+
 async function getPrices() {
   const prices = {};
   let successCount = 0;
@@ -305,7 +357,7 @@ async function evaluate(prices, wethBal, ethPrice) {
     // console.log(`[${ts}] Scanning ${index + 1}/${totalScans}: ${symbol}`);
     const price = prices[symbol.toLowerCase()];
     if (!price) {
-      console.log(`⚠️ No price data for ${symbol}`);
+      if (debug_pairs) console.log(`⚠️ No price data for ${symbol}`);
       res.push({ symbol, price: 0, score: 0, signals: [], closing: [] });
       continue;
     }
@@ -349,7 +401,7 @@ async function checkTrades(entries, ethPrice, isTop) {
   }
 
     if (score < SIGNAL_THRESHOLD && !process.env.AGGRESSIVE) {
-      console.log(`Skipping ${symbol}: score = ${score}`);
+      if (debug_pairs) console.log(`Skipping ${symbol}: score = ${score}`);
       continue;
     }
 
@@ -397,7 +449,14 @@ async function checkTrades(entries, ethPrice, isTop) {
           risk.updateEntry(symbol, price);
           activeTrades[symbol] = true;
           activePositions.add(symbol);
-          logTrade('BUY', symbol, amountEth, price, 'signal');
+          if (res.qty) {
+            if (!positionIndex[symbol]) positionIndex[symbol] = { qty: 0, avgPrice: 0 };
+            const prev = positionIndex[symbol];
+            const newQty = prev.qty + res.qty;
+            const newAvg = ((prev.avgPrice * prev.qty) + res.qty * price) / newQty;
+            positionIndex[symbol] = { qty: newQty, avgPrice: newAvg };
+          }
+          logTrade('BUY', symbol, res.qty || amountEth, price, 'signal');
         }
       }
     } else {
@@ -434,7 +493,18 @@ async function checkTrades(entries, ethPrice, isTop) {
           console.log(`[DRY RUN] Sell simulated for ${symbol}`);
         }
         if (res && res.success) {
-          logTrade('SELL', symbol, 0.01, price, reason, pnl);
+          if (res.qty) {
+            const prev = positionIndex[symbol];
+            if (prev) {
+              const remaining = prev.qty - res.qty;
+              if (remaining <= 0) {
+                delete positionIndex[symbol];
+              } else {
+                positionIndex[symbol].qty = remaining;
+              }
+            }
+          }
+          logTrade('SELL', symbol, res.qty || 0, price, reason, pnl);
           activeTrades[symbol] = false;
           activePositions.delete(symbol);
         }
@@ -455,6 +525,7 @@ async function loop() {
     renderSummary(evaluations, lastWethBal, ethPrice);
     const holdings = await getHoldings(prices);
     renderHoldings(holdings);
+    recordPnl(prices, holdings, lastWethBal);
     await checkTrades(evaluations.filter(e => groupA.includes(e.symbol)), ethPrice, true);
     const now = Date.now();
     if (now - lastGroupBCheck >= 5 * 60 * 1000) {
@@ -470,6 +541,8 @@ async function loop() {
 
 async function main() {
   console.log(`🚀 Bot started at ${localTime()}.`);
+
+  restorePortfolio();
 
   const list = loadTokenList();
   if (list.length) {

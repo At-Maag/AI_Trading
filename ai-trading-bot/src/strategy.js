@@ -1,5 +1,6 @@
 const { RSI, MACD, SMA } = require('technicalindicators');
 const DEBUG_TOKENS = process.env.DEBUG_TOKENS === 'true';
+const debug_pairs = process.env.DEBUG_PAIRS === 'true';
 
 // Calculate the most recent RSI value from an array of closing prices
 function latestRsi(closing) {
