@@ -75,60 +75,69 @@ async function getEthPrice() {
 }
 
 async function getTokenUsdPrice(symbol) {
-  const feeds = {
-    WETH: '0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612'
-  };
+  const tokenSym = (symbol || '').toUpperCase();
+  const wethFeed = '0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612';
 
-  const feedAddress = feeds[symbol.toUpperCase()];
-  if (feedAddress) {
-    const feed = new ethers.Contract(feedAddress, [
+  // Direct Chainlink feed for WETH
+  if (tokenSym === 'WETH') {
+    const feed = new ethers.Contract(wethFeed, [
       'function latestAnswer() view returns (int256)',
       'function latestRoundData() view returns (uint80 roundId,int256 answer,uint256 startedAt,uint256 updatedAt,uint80 answeredInRound)'
     ], provider);
-    let raw;
     try {
-      raw = await feed.latestAnswer();
+      const raw = await feed.latestAnswer();
+      return Number(raw) / 1e8;
     } catch (err) {
       try {
         const [, answer] = await feed.latestRoundData();
-        raw = answer;
+        return Number(answer) / 1e8;
       } catch (err2) {
         console.warn(`Price fetch failed for ${symbol}: ${err2.message}`);
         return 0;
       }
     }
-    return Number(raw) / 1e8;
   }
 
-  // If no Chainlink feed exists, estimate via Uniswap V3 quoter against WETH
-  console.warn(`[NO FEED] Estimating price for ${symbol} using Uniswap + WETH`);
-  const tokenAddr = TOKENS[symbol.toUpperCase()];
-  if (!tokenAddr) return 0;
-
-  const wethAddr = getWethAddress();
-  const amountIn = parseAmount(1, wethAddr); // 1 WETH
-  const FEE_TIER = 3000; // 0.3% fee tier (most common)
-  const sqrtLimit = 0;
-
-  let amountOut;
-  try {
-    amountOut = await quoter.quoteExactInputSingle(
-      wethAddr,
-      tokenAddr,
-      FEE_TIER,
-      amountIn,
-      sqrtLimit
-    );
-  } catch (e) {
-    console.warn(`[QUOTE FAIL] ${symbol}:`, e.message);
+  const tokenAddr = TOKENS[tokenSym];
+  if (!tokenAddr) {
+    console.warn(`[MISSING TOKEN] ${symbol}`);
     return 0;
   }
 
-  const wethPrice = await getEthPrice(); // Chainlink WETH/USD
-  if (!wethPrice || amountOut === 0n) return 0;
+  console.warn(`[NO FEED] Estimating price for ${symbol} using Uniswap + WETH`);
 
-  const priceInWeth = 1 / parseFloat(ethers.formatUnits(amountOut, 18));
-  return priceInWeth * wethPrice;
+  const wethAddr = getWethAddress();
+  const amountIn = parseAmount(1, tokenSym); // sell 1 token
+  const sqrtLimit = 0;
+
+  let wethOut = 0n;
+  for (const fee of FEE_TIERS) {
+    try {
+      const out = await quoter.quoteExactInputSingle(
+        tokenAddr,
+        wethAddr,
+        fee,
+        amountIn,
+        sqrtLimit
+      );
+      if (out && out !== 0n) {
+        wethOut = out;
+        break;
+      }
+    } catch (e) {
+      console.warn(`[QUOTE FAIL] ${symbol} ${fee}: ${e.message}`);
+    }
+  }
+
+  if (wethOut === 0n) return 0;
+
+  const wethPrice = await getEthPrice();
+  if (!wethPrice) return 0;
+
+  const wethAmt = parseFloat(ethers.formatUnits(wethOut, 18));
+  const usd = wethAmt * wethPrice;
+  console.log(`[SUCCESS] ${symbol} estimated at $${usd}`);
+  return usd;
 }
 
 // Minimal ABI for Uniswap V3 router
