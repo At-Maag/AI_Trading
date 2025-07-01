@@ -1,3 +1,4 @@
+const debug_pairs = process.env.DEBUG_PAIRS === 'true';
 const STOP_LOSS = 0.04;
 const TAKE_PROFIT = 0.08;
 const TRAILING_STOP = 0.02;
