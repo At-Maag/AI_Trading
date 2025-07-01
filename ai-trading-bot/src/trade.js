@@ -128,8 +128,22 @@ async function getTokenUsdPrice(symbol) {
       console.warn(`[QUOTE FAIL] ${symbol} ${fee}: ${e.message}`);
     }
   }
-
-  if (wethOut === 0n) return 0;
+  if (wethOut === 0n) {
+    console.warn(`[SUSHI FALLBACK] ${symbol}`);
+    try {
+      const amounts = await sushiRouter.getAmountsOut(amountIn, [tokenAddr, wethAddr]);
+      const out = amounts[1];
+      const priceInWeth = parseFloat(ethers.formatUnits(out, 18));
+      const wethPrice = await getEthPrice();
+      if (!wethPrice) return 0;
+      const usd = priceInWeth * wethPrice;
+      console.log(`[SUSHI SUCCESS] ${symbol} estimated at $${usd}`);
+      return usd;
+    } catch (e) {
+      console.warn(`[SUSHI FAIL] ${symbol}: ${e.code || e.message}`);
+      return 0;
+    }
+  }
 
   const wethPrice = await getEthPrice();
   if (!wethPrice) return 0;
@@ -172,6 +186,15 @@ const rawKey = process.env.PRIVATE_KEY ? process.env.PRIVATE_KEY.trim() : '';
 const wallet = new ethers.Wallet(rawKey.startsWith('0x') ? rawKey : '0x' + rawKey, provider);
 const walletAddress = getAddress(wallet.address);
 const quoter = new ethers.Contract(QUOTER_V2_ADDRESS, UNISWAP_QUOTER_ABI, provider);
+
+const SUSHI_ROUTER_ABI = [
+  "function getAmountsOut(uint amountIn, address[] calldata path) external view returns (uint[] memory amounts)"
+];
+const sushiRouter = new ethers.Contract(
+  '0x1b02da8cb0d097eb8d57a175b88c7d8b47997506',
+  SUSHI_ROUTER_ABI,
+  provider
+);
 
 async function withRetry(fn, retries = 3, delay = 1000) {
   for (let i = 0; i < retries; i++) {
