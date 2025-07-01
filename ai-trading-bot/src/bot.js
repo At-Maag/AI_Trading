@@ -4,6 +4,7 @@ if (FORCE_REFRESH) console.log('🔁 Forced refresh enabled');
 const strategy = require('./strategy');
 const trade = require('./trade');
 const { TOKENS } = trade;
+const { refreshTokenList, SELL_DESTINATION } = require('./tokenManager');
 const risk = require('./risk');
 const fs = require('fs');
 const path = require('path');
@@ -124,6 +125,7 @@ function restorePortfolio() {
       temp[sym].cost -= avg * qty;
     }
   }
+  const held = {};
   for (const sym of Object.keys(temp)) {
     if (temp[sym].qty > 0) {
       const avg = temp[sym].cost / temp[sym].qty;
@@ -131,11 +133,13 @@ function restorePortfolio() {
       activePositions.add(sym);
       activeTrades[sym] = true;
       risk.updateEntry(sym, avg);
+      held[sym] = TOKENS[sym];
     }
   }
+  return held;
 }
 
-function logTrade(action, token, qty, price, reason, pnlPct) {
+function logTrade(action, token, qty, price, reason, pnlPct, dest, txHash) {
   let trades = [];
   try { trades = JSON.parse(fs.readFileSync(logFile)); } catch {}
   const timestamp = new Date().toLocaleString('en-US', {
@@ -144,6 +148,11 @@ function logTrade(action, token, qty, price, reason, pnlPct) {
   const entry = { timestamp, token, qty: Number(qty), price, action };
   if (reason) entry.reason = reason;
   if (typeof pnlPct === 'number') entry.pnlPct = Number(pnlPct.toFixed(2));
+  if (dest) entry.to = dest;
+  if (txHash) entry.txHash = txHash;
+  if (qty && price && action === 'SELL') {
+    entry.value = Number((qty * price).toFixed(2));
+  }
   trades.push(entry);
   fs.writeFileSync(logFile, JSON.stringify(trades, null, 2));
 
@@ -151,6 +160,7 @@ function logTrade(action, token, qty, price, reason, pnlPct) {
   let line = `${emoji} [${localTime()}] ${action} ${token} ${qty} @ $${price}`;
   if (reason) line += ` (${reason})`;
   if (typeof pnlPct === 'number') line += ` PnL ${pnlPct.toFixed(2)}%`;
+  if (dest) line += ` -> ${dest}`;
   console.log(line);
 }
 
@@ -490,7 +500,7 @@ async function checkTrades(entries, ethPrice, isTop) {
             const newAvg = ((prev.avgPrice * prev.qty) + res.qty * price) / newQty;
             positionIndex[symbol] = { qty: newQty, avgPrice: newAvg };
           }
-        logTrade('BUY', symbol, res.qty || amountEth, price, 'signal');
+        logTrade('BUY', symbol, res.qty || amountEth, price, 'signal', null, null, res.tx);
       }
     } else if (activeTrades[symbol] && decision === 'SELL') {
       const reason = sellSignal ? 'signal' : hitStop ? 'stopLoss' : 'takeProfit';
@@ -533,7 +543,7 @@ async function checkTrades(entries, ethPrice, isTop) {
             }
           }
         }
-        logTrade('SELL', symbol, res.qty || 0, price, reason, pnl);
+        logTrade('SELL', symbol, res.qty || 0, price, reason, pnl, SELL_DESTINATION, res.tx && res.tx.hash);
         activeTrades[symbol] = false;
         activePositions.delete(symbol);
       }
@@ -570,7 +580,9 @@ async function loop() {
 async function main() {
   console.log(`🚀 Bot started at ${localTime()}.`);
 
-  restorePortfolio();
+  const held = restorePortfolio();
+  await refreshTokenList(held, FORCE_REFRESH);
+  trade.refreshLocalTokenList();
 
   const list = loadTokenList();
   if (list.length) {
@@ -590,8 +602,18 @@ async function main() {
     if (list.length) {
       const syms = list.map(t => t.symbol.toUpperCase());
       coins = Array.from(new Set(['WETH', ...syms]));
+      trade.refreshLocalTokenList();
     }
   }, 60 * 60 * 1000);
+
+  setInterval(async () => {
+    const pos = {};
+    for (const sym of Object.keys(positionIndex)) {
+      pos[sym] = TOKENS[sym];
+    }
+    await refreshTokenList(pos, false);
+    trade.refreshLocalTokenList();
+  }, 12 * 60 * 60 * 1000);
 }
 
 main().catch(err => {
