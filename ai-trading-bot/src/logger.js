@@ -9,7 +9,19 @@ if (!fs.existsSync(ERROR_LOG)) fs.writeFileSync(ERROR_LOG, '');
 
 function logError(context, error) {
   const timestamp = new Date().toLocaleString('en-US', { timeZone: 'America/Los_Angeles' });
-  const msg = `[${timestamp}] \u274c ${context}\n${error.stack || error.message || error}\n\n`;
+
+  // Allow calling with a single argument (message or Error)
+  if (error === undefined) {
+    if (context instanceof Error) {
+      error = context;
+      context = 'Error';
+    } else {
+      error = null;
+    }
+  }
+
+  const details = error ? error.stack || error.message || String(error) : '';
+  const msg = `[${timestamp}] \u274c ${context}${details ? `\n${details}` : ''}\n\n`;
   try {
     fs.appendFileSync(ERROR_LOG, msg);
   } catch (e) {
