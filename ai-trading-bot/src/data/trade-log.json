@@ -1,0 +1,146 @@
+[
+  {
+    "time": "2025-07-01T06:08:29.569Z",
+    "action": "BUY",
+    "token": "ARB",
+    "amountEth": "0.006293",
+    "tx": "0x7a6709f790724658616dde168b91e70510cf423de33df3f9418a57ebd9c65b8d"
+  },
+  {
+    "time": "2025-07-01T06:08:29.571Z",
+    "side": "BUY",
+    "token": "ARB",
+    "amount": 0.0062922575716697305,
+    "price": 0.3226033705191952,
+    "reason": "signal"
+  },
+  {
+    "time": "2025-07-01T06:15:15.466Z",
+    "action": "BUY",
+    "token": "MAGIC",
+    "amountEth": "0.005349",
+    "tx": "0xc2bd29e5036f44da9442dd53a2561cd3696c1a2277664f2839db89a833f2db47"
+  },
+  {
+    "time": "2025-07-01T06:15:15.470Z",
+    "side": "BUY",
+    "token": "MAGIC",
+    "amount": 0.00534830757166973,
+    "price": 0.12141149202350746,
+    "reason": "signal"
+  },
+  {
+    "time": "2025-07-01T06:16:34.699Z",
+    "action": "BUY",
+    "token": "USDC",
+    "amountEth": "0.004546",
+    "tx": "0x5625b4b8c2dcb7194dcbf708b60a4f87780a141280f389d21162705d3420214a"
+  },
+  {
+    "time": "2025-07-01T06:16:34.701Z",
+    "side": "BUY",
+    "token": "USDC",
+    "amount": 0.0045459575716697296,
+    "price": 57222.97954856645,
+    "reason": "signal"
+  },
+  {
+    "timestamp": "7/1/2025, 12:09:17 AM",
+    "token": "GMX",
+    "qty": 0.98142811902844,
+    "price": 13.36811381632858,
+    "action": "BUY",
+    "reason": "signal"
+  },
+  {
+    "timestamp": "7/1/2025, 12:09:25 AM",
+    "token": "WBTC",
+    "qty": 1.0474e-14,
+    "price": 70718.81935962675,
+    "action": "BUY",
+    "reason": "signal"
+  },
+  {
+    "timestamp": "7/1/2025, 1:32:42 AM",
+    "token": "DAI",
+    "qty": 12.827171301228727,
+    "price": 0.9975859360748641,
+    "action": "BUY",
+    "reason": "signal",
+    "txHash": "0x2b125cbd49228d977143625d3897d5c239b9e04b13f2dbbf910c98df28aeb185"
+  },
+  {
+    "time": "2025-07-01T08:32:44.037Z",
+    "action": "SKIP",
+    "token": "GNS",
+    "reason": "liquidity",
+    "timestamp": "7/1/2025, 1:32:44 AM"
+  },
+  {
+    "time": "2025-07-01T08:32:45.848Z",
+    "action": "SKIP",
+    "token": "RDPX",
+    "reason": "liquidity",
+    "timestamp": "7/1/2025, 1:32:45 AM"
+  },
+  {
+    "timestamp": "7/1/2025, 1:32:59 AM",
+    "token": "DPX",
+    "qty": 0.1100915798716729,
+    "price": 3.5662233178106675,
+    "action": "BUY",
+    "reason": "signal",
+    "txHash": "0xca47c40bcda447d9ce929801610da87590f43534d391a62934bdf2cd180a5ea0"
+  },
+  {
+    "timestamp": "7/2/2025, 5:04:45 AM",
+    "token": "ARB",
+    "qty": 47.72277319924588,
+    "price": 0.3383036291694121,
+    "action": "SELL",
+    "reason": "takeProfit",
+    "pnlPct": 4.87,
+    "to": "WETH",
+    "txHash": "0x60406becc94d96cc031dbc13aef02ce51d9e0dd321bda8c3a8c01c6c9fadbbe6",
+    "value": 16.14
+  },
+  {
+    "timestamp": "7/2/2025, 5:08:00 AM",
+    "token": "SUSHI",
+    "qty": 16.575335351260204,
+    "price": 0.5831600871932671,
+    "action": "BUY",
+    "reason": "signal",
+    "txHash": "0x3cf64fcab5dcb07aa132a9068c0056ccdd64e3549067a891f7cfbc6f543c22e5"
+  },
+  {
+    "timestamp": "7/2/2025, 7:43:58 AM",
+    "token": "ARB",
+    "qty": 28.945474662955355,
+    "price": 0.3434304682474714,
+    "action": "BUY",
+    "reason": "signal",
+    "txHash": "0x6bb11557a89cc86715399b7801801c6019b1dffb1054e3bd59bba871ea9ed100"
+  },
+  {
+    "timestamp": "7/2/2025, 1:14:48 PM",
+    "token": "GMX",
+    "qty": 0.98142811902844,
+    "price": 14.511772602067364,
+    "action": "SELL",
+    "reason": "takeProfit",
+    "pnlPct": 8.56,
+    "to": "WETH",
+    "txHash": "0x3978c2e4172526678bc1c47a7c054a00cf7f70c0e9b02628d3b02cece758337d",
+    "value": 14.24
+  },
+  {
+    "timestamp": "7/2/2025, 1:29:52 PM",
+    "token": "LINK",
+    "qty": 0.8037995336094522,
+    "price": 13.738403795585528,
+    "action": "BUY",
+    "reason": "signal",
+    "txHash": "0x56c3e1ef18d956e3ef01f0b61e81cd2a1b7d26f6ad8399f245c50684cf2998e9"
+  }
+]
