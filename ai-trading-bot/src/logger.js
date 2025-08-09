@@ -1,35 +1,24 @@
-const fs = require('fs');
-const path = require('path');
-
-const LOG_DIR = path.join(process.cwd(), 'logs');
-const ERROR_LOG = path.join(LOG_DIR, 'errors.log');
-
-if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR, { recursive: true });
-if (!fs.existsSync(ERROR_LOG)) fs.writeFileSync(ERROR_LOG, '');
-
-function logError(context, error) {
-  const timestamp = new Date().toLocaleString('en-US', { timeZone: 'America/Los_Angeles' });
-
-  // Allow calling with a single argument (message or Error)
-  if (error === undefined) {
-    if (context instanceof Error) {
-      error = context;
-      context = 'Error';
-    } else {
-      error = null;
+function logError(err, ctx = {}) {
+  const asError = (() => {
+    if (err instanceof Error) return err;
+    try {
+      if (typeof err === 'string') return new Error(err);
+      if (err && typeof err === 'object') return new Error(JSON.stringify(err));
+      return new Error(String(err));
+    } catch {
+      return new Error(String(err));
     }
-  }
+  })();
 
-  const details = error ? error.stack || error.message || String(error) : '';
-  const msg = `[${timestamp}] \u274c ${context}${details ? `\n${details}` : ''}\n\n`;
-  try {
-    fs.appendFileSync(ERROR_LOG, msg);
-  } catch (e) {
-    console.error('Failed to write to error log:', e);
+  const title = ctx.title || 'Error';
+  const extra = ctx.extra;
+  const time = new Date().toISOString();
+
+  console.error(`[${time}] ❌ ${title} | ${asError.name}: ${asError.message}`);
+  if (asError.stack) console.error(asError.stack);
+  if (extra !== undefined) {
+    console.error('Context:', typeof extra === 'string' ? extra : JSON.stringify(extra, null, 2));
   }
 }
-
-process.on('unhandledRejection', err => logError('Unhandled Rejection', err));
-process.on('uncaughtException', err => logError('Uncaught Exception', err));
 
 module.exports = { logError };

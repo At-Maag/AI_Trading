@@ -1,4 +1,7 @@
 require('dotenv').config();
+const { logError } = require('./logger');
+process.on('unhandledRejection', (e) => logError(e, { title: 'Unhandled Rejection' }));
+process.on('uncaughtException', (e) => logError(e, { title: 'Uncaught Exception' }));
 const FORCE_REFRESH = process.argv.includes('--force-refresh');
 if (FORCE_REFRESH) console.log('🔁 Forced refresh enabled');
 const strategy = require('./strategy');
@@ -99,7 +102,6 @@ const logFile = path.join(__dirname, 'data', 'trade-log.json');
 const pnlFile = path.join(__dirname, 'data', 'pnl-log.jsonl');
 const mlFile = path.join(__dirname, 'data', 'ml-dataset.jsonl');
 
-const { logError } = require('./logger');
 
 function restorePortfolio() {
   let trades = [];

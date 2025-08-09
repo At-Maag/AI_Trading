@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const https = require('https');
+const { logError } = require('./logger');
 
 const tokenListPath = path.join(__dirname, '..', 'data', 'arbitrum.tokenlist.json');
 
@@ -13,28 +13,59 @@ const BLACKLIST = [
 // Destination for sale proceeds
 const SELL_DESTINATION = (process.env.SELL_DESTINATION || 'WETH').toUpperCase();
 
-function fetchJson(url) {
-  return new Promise((resolve, reject) => {
-    https.get(url, res => {
-      let data = '';
-      res.on('data', chunk => (data += chunk));
-      res.on('end', () => {
-        try { resolve(JSON.parse(data)); } catch (e) { reject(e); }
-      });
-    }).on('error', reject);
-  });
+function sanitizeMaybeJSON(s) {
+  if (!s) return s;
+  if (s.charCodeAt(0) === 0xFEFF) s = s.slice(1);
+  s = s.replace(/^\)\]\}',?\s*/, '');
+  s = s.replace(/^\s+/, '');
+  const i = s.search(/[\{\[]/);
+  if (i > 0) s = s.slice(i);
+  return s;
+}
+
+async function loadRemoteTokenList(url) {
+  let res;
+  try {
+    res = await fetch(url, { headers: { 'accept': 'application/json' } });
+  } catch (e) {
+    logError(e, { title: 'Startup failure | Token list request failed', extra: { url } });
+    throw e;
+  }
+
+  const status = res.status;
+  const ct = res.headers.get('content-type') || '';
+  const raw = await res.text().catch(() => '');
+
+  if (status < 200 || status >= 300) {
+    logError(new Error(`HTTP ${status}`), {
+      title: 'Startup failure | Bad token list status',
+      extra: { url, contentType: ct, preview: raw.slice(0, 300) }
+    });
+    throw new Error(`Token list fetch failed: HTTP ${status}`);
+  }
+
+  const cleaned = sanitizeMaybeJSON(raw);
+  try {
+    return JSON.parse(cleaned);
+  } catch (e) {
+    logError(e, {
+      title: 'Startup failure | JSON parse error in token list',
+      extra: { url, contentType: ct, preview: cleaned.slice(0, 300) }
+    });
+    throw e;
+  }
 }
 
 async function fetchTokenCandidates() {
   const url = 'https://raw.githubusercontent.com/Uniswap/token-lists/main/src/tokens/arbitrum.json';
-  const data = await fetchJson(url);
+  const data = await loadRemoteTokenList(url);
   return Array.isArray(data) ? data : (data.tokens || []);
 }
 
 async function fetchDexMetrics(address) {
   const url = `https://api.dexscreener.com/latest/dex/tokens/${address}`;
   try {
-    const data = await fetchJson(url);
+    const data = await loadRemoteTokenList(url);
     if (!data || !Array.isArray(data.pairs) || !data.pairs.length) return null;
     const p = data.pairs[0];
     const liq = Number(p.liquidity && p.liquidity.usd) || 0;
@@ -104,4 +135,4 @@ async function refreshTokenList(currentPositions = {}, force = false) {
   fs.writeFileSync(tokenListPath, JSON.stringify({ tokens: final }, null, 2));
 }
 
-module.exports = { refreshTokenList, BLACKLIST, SELL_DESTINATION };
+module.exports = { refreshTokenList, BLACKLIST, SELL_DESTINATION, loadRemoteTokenList };
