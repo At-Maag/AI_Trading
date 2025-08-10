@@ -1,42 +1,83 @@
-const { RSI, MACD, SMA } = require('technicalindicators');
+const { RSI, MACD, SMA, EMA } = require('technicalindicators');
 const DEBUG_TOKENS = process.env.DEBUG_TOKENS === 'true';
 const debug_pairs = process.env.DEBUG_PAIRS === 'true';
 
-// Calculate weighted score of technical signals for a set of closing prices
-function getTradeSignals(prices) {
-  if (!Array.isArray(prices) || prices.length < 26) {
-    return { rsi: null, macdHist: 0, smaAbove: false, momentum: 0, signalScore: 0 };
+// --- Indicator helpers ----------------------------------------------------
+function normalizeKeys(obj = {}) {
+  const map = {};
+  for (const [k, v] of Object.entries(obj)) {
+    map[k.toLowerCase()] = v;
   }
+  return {
+    macd: map.macd || map.MACD || map['macd'],
+    rsi: map.rsi,
+    ema20: map.ema20,
+    ema60: map.ema60
+  };
+}
 
-  const rsiVals = RSI.calculate({ values: prices, period: 14 });
-  const smaVals = SMA.calculate({ period: 20, values: prices });
-  const macdVals = MACD.calculate({
-    values: prices,
+function computeIndicators(candles) {
+  const closes = candles.map(c => typeof c === 'number' ? c : c.close);
+  const rsi = RSI.calculate({ values: closes, period: 14 }).pop();
+  const macdArr = MACD.calculate({
+    values: closes,
     fastPeriod: 12,
     slowPeriod: 26,
     signalPeriod: 9,
     SimpleMAOscillator: false,
     SimpleMASignal: false
   });
+  const macd = macdArr[macdArr.length - 1];
+  const macdPrev = macdArr[macdArr.length - 2];
+  const ema20 = EMA.calculate({ period: 20, values: closes }).pop();
+  const ema60 = EMA.calculate({ period: 60, values: closes }).pop();
+  return { macd, macdPrev, rsi, ema20, ema60 };
+}
 
-  const rsi = rsiVals[rsiVals.length - 1];
-  const prevRsi = rsiVals[rsiVals.length - 2];
+function computeIndicatorsSafe(candles) {
+  try {
+    const ind = computeIndicators(candles);
+    const n = { ...normalizeKeys(ind), macdPrev: ind.macdPrev };
+    if (!n.macd || !n.macdPrev || n.rsi == null || n.ema20 == null || n.ema60 == null) {
+      return null;
+    }
+    return n;
+  } catch {
+    return null;
+  }
+}
+
+// Calculate weighted score of technical signals for a set of closing prices
+function getTradeSignals(candles) {
+  if (!Array.isArray(candles) || candles.length < 60) {
+    return { signal: null, reason: 'not_enough_candles' };
+  }
+
+  const indicators = computeIndicatorsSafe(candles);
+  if (!indicators) {
+    return { signal: null, reason: 'indicator_error' };
+  }
+  const { macd, macdPrev, rsi, ema20, ema60 } = indicators;
+  if ([macd, macdPrev, rsi, ema20, ema60].some(v => v == null || Number.isNaN(v))) {
+    return { signal: null, reason: 'invalid_indicator_values' };
+  }
+
+  const prices = candles.map(c => typeof c === 'number' ? c : c.close);
   const price = prices[prices.length - 1];
   const prevPrice = prices[prices.length - 2];
-  const sma = smaVals[smaVals.length - 1];
-  const prevSma = smaVals[smaVals.length - 2];
-
-  const macdCurr = macdVals[macdVals.length - 1];
-  const macdPrev = macdVals[macdVals.length - 2];
-  const macdHist = (macdCurr.MACD - macdCurr.signal) || 0;
+  const macdHist = (macd.MACD - macd.signal) || 0;
   const prevHist = (macdPrev.MACD - macdPrev.signal) || 0;
 
   const lookback = prices.length >= 6 ? prices[prices.length - 6] : prices[0];
   const momentum = lookback ? (price - lookback) / lookback : 0;
 
   let score = 0;
+  const prevRsi = rsi; // we only have latest, so reuse
   if (rsi < 30) score += 1;
   if (prevRsi < 30 && rsi >= 30) score += 2;
+  const smaVals = SMA.calculate({ period: 20, values: prices });
+  const sma = smaVals[smaVals.length - 1];
+  const prevSma = smaVals[smaVals.length - 2];
   const smaCross = prevPrice <= prevSma && price > sma;
   if (smaCross) score += 2;
   const macdUp = macdHist > prevHist || macdHist > 0;
@@ -44,7 +85,9 @@ function getTradeSignals(prices) {
   if (momentum > 0.5) score += 1;
 
   return {
-    rsi,
+    signal: score >= 3 ? 'BUY' : null,
+    reason: score >= 3 ? 'signal_score' : 'score_below_threshold',
+    indicators: { rsi, macd: macd.MACD, signal: macd.signal, ema20, ema60 },
     macdHist: Number(macdHist.toFixed ? macdHist.toFixed(6) : macdHist),
     smaAbove: price > sma,
     momentum: Number(momentum.toFixed ? momentum.toFixed(6) : momentum),

@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { logError } = require('./logger');
+const { logError, logInfo } = require('./logger');
 process.on('unhandledRejection', (e) => logError(e, { title: 'Unhandled Rejection' }));
 process.on('uncaughtException', (e) => logError(e, { title: 'Uncaught Exception' }));
 const FORCE_REFRESH = process.argv.includes('--force-refresh');
@@ -9,6 +9,9 @@ const trade = require('./trade');
 const { TOKENS } = trade;
 const { refreshTokenList, SELL_DESTINATION } = require('./tokenManager');
 const risk = require('./risk');
+const gasUtils = require('./gas-utils');
+const config = require('./config/aggressive');
+const shouldSellNew = require('./shouldSell');
 const fs = require('fs');
 const path = require('path');
 const { ethers, getAddress } = require('ethers');
@@ -414,19 +417,46 @@ async function checkTrades(entries, ethPrice, isTop) {
     }
 
     const signalInfo = strategy.getTradeSignals(closing);
+    if (!activeTrades[symbol] && (!signalInfo || signalInfo.signal === null)) {
+      logInfo('skip', { symbol, reason: signalInfo && signalInfo.reason });
+      continue;
+    }
+
     let decision = 'NONE';
     let hitStop = false;
     let hitProfit = false;
     let sellSignal = false;
+    let sellReason = '';
 
     if (!activeTrades[symbol]) {
-      if (strategy.shouldBuy(symbol, closing)) {
+      if (signalInfo && signalInfo.signal === 'BUY' && strategy.shouldBuy(symbol, closing)) {
         decision = 'BUY';
       }
     } else {
       hitStop = risk.stopLoss(symbol, price);
       hitProfit = risk.takeProfit(symbol, price);
-      sellSignal = strategy.shouldSell(symbol, closing);
+      const pos = positionIndex[symbol] || {};
+      const ctxSell = {
+        sizeUsd: (pos.qty || 0) * price,
+        unrealizedUsd: (price - (pos.avgPrice || 0)) * (pos.qty || 0),
+        unrealizedPct: pos.avgPrice ? (price - pos.avgPrice) / pos.avgPrice : 0,
+        secondsInTrade: (Date.now() - (pos.entryTime || Date.now())) / 1000,
+        emaSlope: 0,
+        vwapOK: true,
+        armedTrail: pos.armedTrail,
+        peakPrice: pos.peakPrice || price,
+        lastPrice: price,
+        partialsSold: pos.partialsSold || 0
+      };
+      const targets = pos.targets || { minProfitPct: 0, runnerUsd: config.runnerUsd, runnerPct: config.runnerPct, minHoldMs: config.minHoldMs };
+      const sellDec = shouldSellNew(ctxSell, pos.knobs || {}, targets);
+      if (sellDec.action === 'SELL' || sellDec.action === 'PARTIAL') {
+        sellSignal = true;
+        sellReason = sellDec.reason;
+      } else if (sellDec.action === 'ARM_TRAIL') {
+        pos.armedTrail = true;
+        pos.peakPrice = price;
+      }
       if (hitStop || hitProfit || sellSignal) {
         decision = 'SELL';
       }
@@ -469,6 +499,24 @@ async function checkTrades(entries, ethPrice, isTop) {
           console.log("Token address is null, skipping trade.");
           continue;
         }
+
+        let gasEst;
+        try {
+          gasEst = await gasUtils.estimateSwapGasUsd(
+            router,
+            { method: 'swapExactETHForTokens', args: [0, [getWethAddress(), tokenAddr], walletAddress, Math.floor(Date.now() / 1000) + 60] },
+            { method: 'swapExactTokensForETH', args: [0, 0, [tokenAddr, getWethAddress()], walletAddress, Math.floor(Date.now() / 1000) + 60] },
+            gasPrice,
+            ethPrice || 0,
+            config.gasBuffer
+          );
+        } catch (e) {
+          logError(e, { title: 'gas_estimate' });
+          gasEst = { buyUsd: 0, sellUsd: 0, totalUsd: 0 };
+        }
+        const profitCalc = gasUtils.calcMinProfitPct(gasEst, amountEth * (ethPrice || 0));
+        const knobs = gasUtils.regimeKnobs(profitCalc.regime);
+
         let res;
         if (!paper) {
           try {
@@ -490,17 +538,24 @@ async function checkTrades(entries, ethPrice, isTop) {
           risk.updateEntry(symbol, price);
           activeTrades[symbol] = true;
           activePositions.add(symbol);
-          if (res.qty) {
-            if (!positionIndex[symbol]) positionIndex[symbol] = { qty: 0, avgPrice: 0 };
-            const prev = positionIndex[symbol];
-            const newQty = prev.qty + res.qty;
-            const newAvg = ((prev.avgPrice * prev.qty) + res.qty * price) / newQty;
-            positionIndex[symbol] = { qty: newQty, avgPrice: newAvg };
-          }
-        logTrade('BUY', symbol, res.qty || amountEth, price, 'signal', null, null, res.tx);
-      }
+          if (!positionIndex[symbol]) positionIndex[symbol] = { qty: 0, avgPrice: 0 };
+          const prev = positionIndex[symbol];
+          const newQty = prev.qty + (res.qty || 0);
+          const newAvg = newQty ? ((prev.avgPrice * prev.qty) + (res.qty || 0) * price) / newQty : price;
+          positionIndex[symbol] = {
+            qty: newQty,
+            avgPrice: newAvg,
+            entryTime: Date.now(),
+            targets: { minProfitPct: profitCalc.minProfitPct, runnerUsd: config.runnerUsd, runnerPct: config.runnerPct, minHoldMs: config.minHoldMs },
+            knobs,
+            partialsSold: 0,
+            armedTrail: false,
+            peakPrice: price
+          };
+          logTrade('BUY', symbol, res.qty || amountEth, price, 'signal', null, null, res.tx);
+        }
     } else if (activeTrades[symbol] && decision === 'SELL') {
-      const reason = sellSignal ? 'signal' : hitStop ? 'stopLoss' : 'takeProfit';
+      const reason = sellSignal ? (sellReason || 'signal') : hitStop ? 'stopLoss' : 'takeProfit';
       const entry = risk.getEntry(symbol) || price;
       const pnl = ((price - entry) / entry) * 100;
       let res;
